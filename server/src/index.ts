@@ -1,0 +1,575 @@
+import express from 'express';
+import cors from 'cors';
+import { createServer } from 'http';
+import { Server as SocketServer } from 'socket.io';
+import dotenv from 'dotenv';
+import { v4 as uuid } from 'uuid';
+
+import {
+  initDatabase, dbCreateTicket, dbUpdateTicket, dbCreateCase,
+  dbGetCases, dbGetPendingTickets, dbInsertLog, dbGetRecentLogs,
+  dbLogAgentMessage, dbSaveMessage, dbGetConversation,
+  dbUpdateCase, dbUpdateAgent,
+} from './db/supabase.js';
+import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent } from './services/aiService.js';
+import { initDiscord, sendDiscordMessage } from './services/discord.js';
+import { syncRepo, getProjectStructure } from './services/codeAnalysis.js';
+
+dotenv.config({ path: '.env' });
+dotenv.config({ path: '../.env' });
+
+const app = express();
+app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+app.use(express.json());
+
+const httpServer = createServer(app);
+const io = new SocketServer(httpServer, {
+  cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' },
+});
+
+// --- State ---
+let bugCounter = 0;
+let caseCounter = 0;
+
+// Active tickets per Discord channel
+const activeChannels = new Map<string, {
+  ticketId: string;
+  status: 'collecting' | 'processing' | 'qa' | 'dev' | 'done';
+  agentName: string;
+  agentPrompt: string;
+  bugReport?: string;
+}>();
+
+// Agent config (loaded from frontend or defaults)
+interface AgentConfig {
+  id: string;
+  name: string;
+  role: string;
+  systemPrompt: string;
+}
+
+const agentConfigs = new Map<string, AgentConfig>();
+
+// Default agent names
+let supportAgentName = 'Ana';
+let qaAgentName = 'Carlos';
+let devAgentName = 'Lucas';
+let logAgentName = 'Monitor';
+let ceoAgentName = 'Director Silva';
+
+// Default prompts
+const SUPPORT_PROMPT = `Você é um agente de suporte técnico de nível 1 da SoftcomHub. Seu nome é {AGENT_NAME}.
+Você atende clientes via Discord. Seja empático, profissional e objetivo.
+
+REGRAS:
+1. Ao receber uma mensagem, analise se é uma DÚVIDA ou um BUG/ERRO.
+2. Se for DÚVIDA: responda de forma clara e educada diretamente.
+3. Se for BUG: colete o MÁXIMO de informações antes de escalar:
+   - O que aconteceu exatamente?
+   - Qual página/funcionalidade?
+   - Mensagem de erro (se houver)?
+   - Passos para reproduzir?
+   - Navegador/dispositivo?
+   - Desde quando está acontecendo?
+
+4. Quando tiver informações SUFICIENTES sobre o bug, responda com JSON:
+{
+  "acao": "escalar_qa",
+  "titulo": "título curto do bug",
+  "descricao": "descrição completa com todos os detalhes coletados",
+  "passos_reproducao": ["passo 1", "passo 2"],
+  "erro_reportado": "mensagem de erro se houver",
+  "prioridade": "alta|media|baixa",
+  "ambiente": "navegador, dispositivo, etc"
+}
+
+5. Se NÃO tiver informações suficientes, PERGUNTE mais detalhes ao usuário. Não escale sem ter detalhes.
+6. Sempre responda em português brasileiro.
+7. Não invente informações. Só escale quando o usuário confirmou os detalhes.`;
+
+const QA_PROMPT = `Você é um engenheiro de QA sênior da SoftcomHub. Seu nome é {AGENT_NAME}.
+
+Você recebe relatórios de bugs do suporte e tem acesso ao CÓDIGO FONTE REAL do projeto.
+Sua função é analisar o código, identificar a causa do bug, e gerar um relatório técnico.
+
+REGRAS:
+1. Analise o código fornecido para identificar o componente afetado
+2. Identifique a causa provável baseada no código real
+3. Liste os arquivos específicos que precisam ser investigados
+4. Classifique a gravidade: critico, alto, medio, baixo
+
+Responda SEMPRE com JSON:
+{
+  "bug_id": "BUG-X",
+  "titulo": "título técnico",
+  "analise_qa": "sua análise detalhada baseada no código",
+  "componente_afetado": "módulo/serviço específico",
+  "causa_provavel": "hipótese baseada no código analisado",
+  "arquivos_afetados": ["path/to/file1.ts", "path/to/file2.tsx"],
+  "gravidade": "critico|alto|medio|baixo",
+  "passos_reproducao": ["passo 1", "passo 2"],
+  "sugestao_fix": "sugestão inicial de correção"
+}`;
+
+const DEV_PROMPT = `Você é um desenvolvedor sênior / tech lead da SoftcomHub. Seu nome é {AGENT_NAME}.
+
+Você recebe relatórios do QA com análise de bugs e tem acesso ao CÓDIGO FONTE REAL do projeto.
+Sua função é gerar um CASO COMPLETO com um PROMPT DE CORREÇÃO que alguém pode copiar e colar
+em outra IA (como Claude) para implementar a correção.
+
+REGRAS:
+1. Analise a causa raiz baseada no relatório do QA e no código real
+2. Mapeie TODOS os arquivos que precisam ser alterados
+3. Gere um prompt_ia COMPLETO e DETALHADO
+
+Responda com JSON:
+{
+  "caso_id": "CASE-X",
+  "bug_id": "BUG-X",
+  "titulo": "título do caso",
+  "causa_raiz": "explicação técnica detalhada da causa",
+  "arquivos_alterar": [
+    {"arquivo": "app/api/tickets/criar/route.ts", "alteracao": "O que mudar e por quê"}
+  ],
+  "estrategia_fix": "plano detalhado de correção",
+  "efeitos_colaterais": ["possível efeito colateral"],
+  "testes_necessarios": ["teste que deve ser feito"],
+  "prompt_ia": "PROMPT COMPLETO E DETALHADO para copiar e colar no Claude. Deve incluir:\\n1. Contexto do sistema\\n2. Código atual dos arquivos afetados\\n3. O que precisa mudar e por quê\\n4. Código corrigido esperado\\n5. Como testar a correção"
+}
+
+O campo prompt_ia é o MAIS IMPORTANTE. Ele deve ser auto-contido para que qualquer dev
+possa copiar, colar numa IA e obter a implementação da correção.`;
+
+// --- REST API ---
+
+app.get('/api/health', (_, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Submit ticket manually
+app.post('/api/tickets', async (req, res) => {
+  const { author, message, source = 'manual' } = req.body;
+  const channelId = `manual_${uuid()}`;
+  const ticket = await dbCreateTicket({
+    type: 'suporte',
+    source,
+    discord_author: author || 'Anônimo',
+    discord_message: message,
+    discord_channel_id: channelId,
+  });
+  if (ticket) {
+    io.emit('ticket:new', ticket);
+    handleSupportMessage(channelId, author || 'Anônimo', message, ticket.id);
+  }
+  res.json({ success: true, ticket });
+});
+
+app.get('/api/tickets', async (_, res) => {
+  const tickets = await dbGetPendingTickets();
+  res.json(tickets);
+});
+
+app.get('/api/cases', async (_, res) => {
+  const cases = await dbGetCases();
+  res.json(cases);
+});
+
+// Resolve a case
+app.post('/api/cases/:casoId/resolve', async (req, res) => {
+  const { casoId } = req.params;
+  await dbUpdateCase(casoId, { status: 'resolved' });
+
+  // Find the original channel and notify user
+  const cases = await dbGetCases();
+  const theCase = cases.find((c: any) => c.caso_id === casoId);
+  if (theCase?.bug_id) {
+    // Find ticket with this bug_id in metadata
+    for (const [channelId, info] of activeChannels) {
+      if (info.status !== 'done') {
+        await sendDiscordMessage(channelId,
+          `✅ **Caso ${casoId} Resolvido!**\n\nO problema "${theCase.titulo}" foi analisado e corrigido pela nossa equipe de desenvolvimento. Se precisar de mais alguma coisa, é só nos chamar!`
+        );
+        info.status = 'done';
+        break;
+      }
+    }
+  }
+
+  io.emit('case:resolved', { casoId });
+  emitLog(`Caso ${casoId} marcado como resolvido`);
+  res.json({ success: true });
+});
+
+// Rename agent
+app.post('/api/agents/:id/rename', async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name required' });
+
+  await dbUpdateAgent(id, { name });
+  io.emit('agent:renamed', { agentId: id, name });
+  emitLog(`Agente renomeado para: ${name}`);
+  res.json({ success: true });
+});
+
+// Get project code structure
+app.get('/api/code/structure', (_, res) => {
+  res.json({ structure: getProjectStructure() });
+});
+
+app.get('/api/logs', async (_, res) => {
+  const logs = await dbGetRecentLogs(50);
+  res.json(logs);
+});
+
+// Get conversation history
+app.get('/api/conversations/:channelId', async (req, res) => {
+  const history = await dbGetConversation(req.params.channelId, 50);
+  res.json(history);
+});
+
+// --- DISCORD MESSAGE HANDLER ---
+// This is the core: every Discord message goes through here
+
+async function handleDiscordMessage(author: string, content: string, channelId: string) {
+  // Save user message to conversations
+  await dbSaveMessage({
+    channel_id: channelId,
+    role: 'user',
+    author_name: author,
+    message: content,
+  });
+
+  io.emit('discord:message', { author, content, channelId });
+
+  // Check if there's an active ticket for this channel
+  const active = activeChannels.get(channelId);
+
+  if (active && active.status === 'collecting') {
+    // Continue collecting info for existing ticket
+    await handleSupportMessage(channelId, author, content, active.ticketId);
+  } else if (!active) {
+    // New conversation - create ticket
+    const ticket = await dbCreateTicket({
+      type: 'suporte',
+      source: 'discord',
+      discord_author: author,
+      discord_message: content,
+      discord_channel_id: channelId,
+    });
+
+    if (ticket) {
+      io.emit('ticket:new', ticket);
+      await handleSupportMessage(channelId, author, content, ticket.id);
+    }
+  }
+  // If status is processing/qa/dev, ignore (agent is working)
+}
+
+// --- SUPPORT AGENT ---
+
+async function handleSupportMessage(channelId: string, author: string, message: string, ticketId: string) {
+  // Get conversation history for context
+  const history = await dbGetConversation(channelId, 15);
+  const conversationContext = history.map(m => ({
+    role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
+    content: `${m.author_name}: ${m.message}`,
+  }));
+
+  // Set channel as active
+  activeChannels.set(channelId, {
+    ticketId,
+    status: 'collecting',
+    agentName: supportAgentName,
+    agentPrompt: SUPPORT_PROMPT,
+  });
+
+  emitLog(`${supportAgentName} analisando mensagem de ${author}...`);
+  io.emit('agent:working', { role: 'suporte', agentName: supportAgentName, action: 'analyzing' });
+
+  // Call AI with full conversation context
+  const aiResponse = await chatWithAgent(
+    supportAgentName,
+    SUPPORT_PROMPT,
+    message,
+    conversationContext,
+  );
+
+  // Check if AI wants to escalate (returns JSON with acao: "escalar_qa")
+  const jsonMatch = aiResponse.match(/\{[\s\S]*"acao"\s*:\s*"escalar_qa"[\s\S]*\}/);
+
+  if (jsonMatch) {
+    try {
+      const bugData = JSON.parse(jsonMatch[0]);
+
+      // Save agent message
+      await dbSaveMessage({
+        channel_id: channelId,
+        ticket_id: ticketId,
+        agent_id: 'support',
+        role: 'agent',
+        author_name: supportAgentName,
+        message: `Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`,
+      });
+
+      // Send to Discord
+      await sendDiscordMessage(channelId,
+        `🤖 **${supportAgentName}:** Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`
+      );
+
+      // Update ticket
+      await dbUpdateTicket(ticketId, {
+        status: 'escalated',
+        classification: 'bug',
+        result: bugData,
+      });
+
+      io.emit('ticket:escalated', { ticketId, bugId: `BUG-${++bugCounter}`, classification: bugData });
+      emitLog(`${supportAgentName}: Bug detectado e escalado para QA`);
+
+      // Update channel status
+      const channelInfo = activeChannels.get(channelId)!;
+      channelInfo.status = 'qa';
+
+      // Trigger QA pipeline
+      await processQA(channelId, ticketId, bugData, `BUG-${bugCounter}`);
+
+    } catch (e) {
+      console.error('Failed to parse escalation JSON:', e);
+      // Treat as normal response
+      await sendSupportResponse(channelId, ticketId, aiResponse);
+    }
+  } else {
+    // Normal response (question answered or asking for more info)
+    await sendSupportResponse(channelId, ticketId, aiResponse);
+
+    // Check if it looks like a final answer (not a follow-up question)
+    if (!aiResponse.includes('?') || aiResponse.toLowerCase().includes('espero ter ajudado')) {
+      await dbUpdateTicket(ticketId, { status: 'done', classification: 'duvida', completed_at: new Date().toISOString() });
+      activeChannels.delete(channelId);
+      io.emit('ticket:completed', { ticketId, classification: 'duvida' });
+      emitLog(`${supportAgentName}: Respondeu dúvida de ${author}`);
+    }
+  }
+}
+
+async function sendSupportResponse(channelId: string, ticketId: string, response: string) {
+  // Clean any JSON from the response for Discord
+  const cleanResponse = response.replace(/```json[\s\S]*?```/g, '').replace(/\{[\s\S]*"acao"[\s\S]*\}/g, '').trim();
+
+  await dbSaveMessage({
+    channel_id: channelId,
+    ticket_id: ticketId,
+    agent_id: 'support',
+    role: 'agent',
+    author_name: supportAgentName,
+    message: cleanResponse,
+  });
+
+  await sendDiscordMessage(channelId, `🤖 **${supportAgentName}:** ${cleanResponse}`);
+}
+
+// --- QA AGENT ---
+
+async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string) {
+  emitLog(`${qaAgentName} analisando ${bugId}...`);
+  io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: 'analyzing' });
+
+  // QA analyzes with code context
+  const qaReport = await analyzeQA(qaAgentName, QA_PROMPT, JSON.stringify(bugData), bugId);
+
+  // Save QA's internal analysis
+  await dbSaveMessage({
+    channel_id: `internal_qa`,
+    ticket_id: ticketId,
+    agent_id: 'qa',
+    role: 'agent',
+    author_name: qaAgentName,
+    message: `Análise do ${bugId}: ${qaReport.analise_qa}`,
+    metadata: qaReport as any,
+  });
+
+  // Notify user on Discord
+  await sendDiscordMessage(channelId,
+    `🔍 **${qaAgentName} (QA):** Analisei o problema reportado. ${
+      qaReport.gravidade === 'critico' ? '⚠️ Gravidade CRÍTICA!' :
+      qaReport.gravidade === 'alto' ? '🔴 Gravidade alta.' :
+      '📋 Análise concluída.'
+    } Encaminhando para o desenvolvedor para análise de código e correção.`
+  );
+
+  await dbSaveMessage({
+    channel_id: channelId,
+    agent_id: 'qa',
+    role: 'agent',
+    author_name: qaAgentName,
+    message: `Análise concluída. Gravidade: ${qaReport.gravidade}. Encaminhando para DEV.`,
+  });
+
+  io.emit('qa:completed', { bugId, report: qaReport });
+  emitLog(`${qaAgentName}: Análise concluída - ${qaReport.gravidade}`);
+
+  // Update channel status
+  const channelInfo = activeChannels.get(channelId);
+  if (channelInfo) channelInfo.status = 'dev';
+
+  // Trigger DEV pipeline
+  await processDev(channelId, ticketId, qaReport, bugId);
+}
+
+// --- DEV AGENT ---
+
+async function processDev(channelId: string, ticketId: string, qaReport: any, bugId: string) {
+  const caseId = `CASE-${++caseCounter}`;
+  emitLog(`${devAgentName} gerando caso ${caseId}...`);
+  io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: 'investigating' });
+
+  const devCase = await generateDevCase(devAgentName, DEV_PROMPT, qaReport, caseId);
+
+  // Save case to DB
+  await dbCreateCase({
+    caso_id: devCase.caso_id || caseId,
+    bug_id: bugId,
+    titulo: devCase.titulo,
+    causa_raiz: devCase.causa_raiz,
+    estrategia_fix: devCase.estrategia_fix,
+    prompt_ia: devCase.prompt_ia,
+  });
+
+  // Save DEV's analysis
+  await dbSaveMessage({
+    channel_id: `internal_dev`,
+    ticket_id: ticketId,
+    agent_id: 'dev',
+    role: 'agent',
+    author_name: devAgentName,
+    message: `Caso ${caseId} aberto: ${devCase.titulo}. Causa raiz: ${devCase.causa_raiz}`,
+    metadata: devCase as any,
+  });
+
+  // Notify user on Discord
+  await sendDiscordMessage(channelId,
+    `🛠️ **${devAgentName} (DEV):** Caso **${caseId}** aberto para o bug ${bugId}.\n\n` +
+    `📝 **${devCase.titulo}**\n` +
+    `🔍 Causa: ${devCase.causa_raiz?.slice(0, 200) || 'Em análise'}...\n\n` +
+    `Nossa equipe vai trabalhar na correção. Você será notificado quando estiver resolvido!`
+  );
+
+  await dbSaveMessage({
+    channel_id: channelId,
+    agent_id: 'dev',
+    role: 'agent',
+    author_name: devAgentName,
+    message: `Caso ${caseId} aberto. Título: ${devCase.titulo}`,
+  });
+
+  io.emit('case:opened', devCase);
+  emitLog(`${devAgentName}: Caso ${caseId} aberto - ${devCase.titulo}`);
+}
+
+// --- LOG ANALYZER ---
+async function runLogAnalysis() {
+  const logs = await dbGetRecentLogs(50);
+  if (logs.length === 0) return;
+  const logsText = logs.map((l: any) => `[${l.level}] ${l.service}: ${l.message}`).join('\n');
+  const result = await analyzeLogs(logAgentName, `Você é um especialista em análise de logs. Analise e identifique anomalias.`, logsText);
+  if (result.hasAnomaly) {
+    emitLog(`${logAgentName}: Anomalia detectada nos logs!`);
+    io.emit('log:anomaly', { report: result.report });
+  }
+}
+
+// --- Socket.io ---
+io.on('connection', (socket) => {
+  console.log('[Socket] Client connected:', socket.id);
+
+  // Chat message from frontend (chat with any agent via AI)
+  socket.on('chat:message', async (data) => {
+    const { agentId, agentName, agentRole, systemPrompt, message, history } = data;
+
+    // Save user message
+    const channelId = `dashboard_${agentId}`;
+    await dbSaveMessage({
+      channel_id: channelId,
+      agent_id: agentId,
+      role: 'user',
+      author_name: 'Operador',
+      message,
+    });
+
+    // Get full history from DB for context
+    const dbHistory = await dbGetConversation(channelId, 20);
+    const contextHistory = dbHistory.map(m => ({
+      role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
+      content: m.message,
+    }));
+
+    // Call AI
+    const response = await chatWithAgent(agentName, systemPrompt, message, contextHistory);
+
+    // Save agent response
+    await dbSaveMessage({
+      channel_id: channelId,
+      agent_id: agentId,
+      role: 'agent',
+      author_name: agentName,
+      message: response,
+    });
+
+    socket.emit('chat:response', { agentId, response });
+  });
+
+  // Rename agent
+  socket.on('agent:rename', async (data) => {
+    const { agentId, name, role } = data;
+    if (role === 'suporte') supportAgentName = name;
+    else if (role === 'qa') qaAgentName = name;
+    else if (role === 'dev') devAgentName = name;
+    else if (role === 'log_analyzer') logAgentName = name;
+    else if (role === 'ceo') ceoAgentName = name;
+    io.emit('agent:renamed', { agentId, name });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('[Socket] Client disconnected:', socket.id);
+  });
+});
+
+function emitLog(message: string) {
+  const entry = { time: new Date().toLocaleTimeString('pt-BR'), message };
+  io.emit('log:entry', entry);
+  console.log(`[Log] ${entry.time} ${message}`);
+  dbInsertLog({ level: 'info', service: 'orchestrator', message });
+}
+
+// --- Start Server ---
+const PORT = parseInt(process.env.PORT || '3001');
+
+async function start() {
+  const codeOk = await syncRepo();
+  if (codeOk) {
+    const structure = getProjectStructure();
+    console.log(`[CodeAnalysis] Project loaded:\n${structure.split('\n').slice(0, 5).join('\n')}...`);
+  }
+
+  const dbOk = await initDatabase();
+  if (!dbOk) console.warn('Database not fully initialized. Run schema.sql in Supabase.');
+
+  const discordOk = await initDiscord((author, content, channelId) => {
+    handleDiscordMessage(author, content, channelId);
+  });
+  if (!discordOk) console.warn('Discord bot not connected.');
+
+  setInterval(() => syncRepo(), 30 * 60 * 1000);
+  setInterval(runLogAnalysis, 5 * 60 * 1000);
+
+  httpServer.listen(PORT, () => {
+    console.log(`\n[Server] Running on http://localhost:${PORT}`);
+    console.log(`[Server] Database: ${dbOk ? '✅ Connected' : '❌ Not connected'}`);
+    console.log(`[Server] Discord: ${discordOk ? '✅ Connected' : '❌ Not connected'}`);
+    console.log(`[Server] Code: ${codeOk ? '✅ 187 files loaded' : '❌ Not loaded'}`);
+    console.log(`[Server] AI: Claude Sonnet 4\n`);
+  });
+}
+
+start().catch(console.error);
