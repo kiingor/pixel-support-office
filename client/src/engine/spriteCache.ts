@@ -7,7 +7,7 @@ function makeCacheKey(sprite: SpriteData, zoom: number): string {
   // is reused frequently, we'll hash the first row + dimensions + zoom
   const h = sprite.length;
   const w = sprite[0]?.length ?? 0;
-  const sample = sprite[0]?.[0] ?? '' + sprite[h >> 1]?.[w >> 1] ?? '';
+  const sample = (sprite[0]?.[0] ?? '') + (sprite[h >> 1]?.[w >> 1] ?? '');
   return `${h}_${w}_${sample}_${zoom}_${sprite[0]?.join('').slice(0, 20)}`;
 }
 
