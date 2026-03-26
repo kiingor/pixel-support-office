@@ -1095,11 +1095,16 @@ io.on('connection', (socket) => {
     socket.emit('chat:response', { agentId, response });
   });
 
-  // Meeting message: fan out user message to all participating agents
-  socket.on('meeting:message', async (data: { message: string; topic: string; participants: string[] }) => {
-    const { message, topic, participants } = data;
+  // Meeting message: send to specific agent or all participants
+  socket.on('meeting:message', async (data: { message: string; topic: string; participants: string[]; targetAgent?: string }) => {
+    const { message, topic, participants, targetAgent } = data;
 
-    for (const participantName of participants) {
+    // Determine who should respond
+    const respondents = targetAgent
+      ? participants.filter(name => name.toLowerCase() === targetAgent.toLowerCase())
+      : participants;
+
+    for (const participantName of respondents) {
       const agent = findAgentByName(participantName);
       if (!agent || agent.role === 'ceo') continue;
 

@@ -412,10 +412,23 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       meetingLoading: true,
     });
 
+    // Detect if the message targets a specific agent by name
+    // e.g. "Carlos, o que voce acha?" or "Ana qual o status?"
+    const textLower = text.toLowerCase();
+    let targetAgent: string | undefined;
+    for (const name of meetingParticipants) {
+      if (textLower.startsWith(name.toLowerCase() + ',') ||
+          textLower.startsWith(name.toLowerCase() + ' ')) {
+        targetAgent = name;
+        break;
+      }
+    }
+
     socket.emit('meeting:message', {
       message: text,
       topic: meetingTopic,
       participants: meetingParticipants,
+      targetAgent,
     });
   },
 
