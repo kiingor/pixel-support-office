@@ -262,7 +262,8 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   resolveCase: (casoId) => {
     const socket = get().socket;
     // Call API to resolve
-    fetch(`http://localhost:3001/api/cases/${casoId}/resolve`, { method: 'POST' })
+    const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3001' : '';
+    fetch(`${baseUrl}/api/cases/${casoId}/resolve`, { method: 'POST' })
       .then(() => {
         get().updateCase(casoId, { status: 'resolved' });
         get().addLogEntry(`Caso ${casoId} resolvido!`);

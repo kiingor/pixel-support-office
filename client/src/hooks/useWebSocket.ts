@@ -2,7 +2,10 @@ import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
 
-const SERVER_URL = 'http://localhost:3001';
+// In production, connect to same host. In dev, use localhost:3001
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
+);
 
 export function useWebSocket() {
   const socketRef = useRef<Socket | null>(null);
