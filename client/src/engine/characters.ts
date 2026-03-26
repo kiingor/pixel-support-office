@@ -134,39 +134,14 @@ function updateWalking(ch: Character, dt: number): void {
 }
 
 function updateIdle(
-  ch: Character,
-  dt: number,
-  tiles: TileType[][],
-  blockedTiles: Set<string>,
+  _ch: Character,
+  _dt: number,
+  _tiles: TileType[][],
+  _blockedTiles: Set<string>,
 ): void {
-  // Wander logic
-  ch.wanderTimer -= dt;
-  if (ch.wanderTimer <= 0) {
-    ch.wanderTimer = WANDER_MIN + Math.random() * (WANDER_MAX - WANDER_MIN);
-
-    // Pick a random nearby walkable tile
-    const range = 3;
-    const candidates: Position[] = [];
-    for (let dr = -range; dr <= range; dr++) {
-      for (let dc = -range; dc <= range; dc++) {
-        const nc = ch.col + dc;
-        const nr = ch.row + dr;
-        if (isWalkable(nc, nr, tiles, blockedTiles) && (dc !== 0 || dr !== 0)) {
-          candidates.push({ col: nc, row: nr });
-        }
-      }
-    }
-
-    if (candidates.length > 0) {
-      const target = candidates[Math.floor(Math.random() * candidates.length)];
-      const path = findPath(ch.col, ch.row, target.col, target.row, tiles, blockedTiles);
-      if (path.length > 0) {
-        ch.path = path;
-        ch.pathIndex = 0;
-        ch.state = CharacterState.WALK;
-      }
-    }
-  }
+  // Agents stay at their desks. They only move when explicitly told to
+  // (via sendCharacterTo for tasks, escalations, or chat commands).
+  // No random wandering.
 }
 
 /** Send a character walking to a specific position. */

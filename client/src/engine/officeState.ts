@@ -143,11 +143,14 @@ export class OfficeState {
         targetSeat: '',
         callback: () => {
           ch.targetSectorId = null;
+          // Face down into the room (not toward the wall)
+          ch.direction = 0; // Direction.DOWN
+          ch.state = CharacterState.TALK;
           if (callback) callback();
-          // Return to own sector
+          // Return to own sector after a pause
           setTimeout(() => {
             this.returnAgentToSeat(agentId);
-          }, 2000);
+          }, 3000);
         },
       });
     }
