@@ -158,6 +158,51 @@ export class OfficeState {
     return success;
   }
 
+  /** Send an agent to walk to another agent's position. */
+  sendAgentToAgent(agentId: string, targetAgentName: string, callback?: () => void): boolean {
+    const ch = this.characters.get(agentId);
+    if (!ch) return false;
+
+    // Find target agent by name
+    let target: Character | null = null;
+    for (const c of this.characters.values()) {
+      if (c.name === targetAgentName) {
+        target = c;
+        break;
+      }
+    }
+    if (!target) return false;
+
+    ch.state = CharacterState.WALK;
+
+    // Walk to a tile adjacent to the target (one row below)
+    const targetCol = target.col;
+    const targetRow = target.row + 1;
+
+    const success = sendCharacterTo(ch, targetCol, targetRow, this.tiles, this.blockedTiles);
+
+    if (success) {
+      this.pendingArrivals.set(ch.id, {
+        targetSeat: '',
+        callback: () => {
+          ch.state = CharacterState.TALK;
+          // Face toward the target agent
+          if (target!.row < ch.row) ch.direction = 3; // UP
+          else if (target!.row > ch.row) ch.direction = 0; // DOWN
+          else if (target!.col < ch.col) ch.direction = 1; // LEFT
+          else ch.direction = 2; // RIGHT
+          if (callback) callback();
+          // Return to own sector after a pause
+          setTimeout(() => {
+            this.returnAgentToSeat(agentId);
+          }, 5000);
+        },
+      });
+    }
+
+    return success;
+  }
+
   /** Return an agent to their assigned seat. */
   returnAgentToSeat(agentId: string): void {
     const ch = this.characters.get(agentId);

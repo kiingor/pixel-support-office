@@ -118,12 +118,15 @@ PARA EXECUTAR AÇÕES, inclua este JSON no final da sua resposta:
   {"type": "walk_to", "sector": "QA_ROOM"},
   {"type": "talk_to", "agentName": "Carlos", "message": "Mensagem"},
   {"type": "ask_agent", "agentName": "Carlos", "question": "Pergunta para o agente"},
-  {"type": "daily_summary"}
+  {"type": "daily_summary"},
+  {"type": "call_meeting", "topic": "Assunto da reunião"}
 ]}
 \`\`\`
 
 IMPORTANTE: Só inclua o bloco actions quando for EXECUTAR algo. Para conversas normais, responda sem o bloco.
 Use "daily_summary" quando o operador pedir um resumo geral do escritório - você visitará cada agente e compilará os resumos.
+Use "call_meeting" quando o operador pedir uma reunião - todos os agentes irão para a sala de reunião e um chat de grupo será aberto.
+Quando usar "talk_to" ou "ask_agent", use o NOME EXATO do agente conforme listado no estado do escritório.
 Sempre responda em português brasileiro. Seja um líder firme mas justo.`;
 
 // Default prompts
@@ -261,12 +264,19 @@ function buildOfficeContext(): string {
 
   const maxSeats: Record<string, number> = { suporte: 10, qa: 5, dev: 5, log_analyzer: 5 };
 
+  // Build agent roster with names and roles
+  const allAgents = getActiveAgentsList();
+  const agentRoster = allAgents.map(a => `  - ${a.name} (${a.role}) [${a.sectorId}]`).join('\n');
+
   return `- Suporte: ${counts.suporte.total} agentes (${counts.suporte.busy} ocupados, ${counts.suporte.total - counts.suporte.busy} ociosos) - Máx: ${maxSeats.suporte}
 - QA: ${counts.qa.total} agentes - Máx: ${maxSeats.qa}
 - DEV: ${counts.dev.total} agentes - Máx: ${maxSeats.dev}
 - Log Analyzer: ${counts.log_analyzer.total} agentes - Máx: ${maxSeats.log_analyzer}
 - Fila de espera: ${ticketQueue.length} tickets
-- Vagas disponíveis Suporte: ${maxSeats.suporte - counts.suporte.total}`;
+- Vagas disponíveis Suporte: ${maxSeats.suporte - counts.suporte.total}
+
+AGENTES NO ESCRITÓRIO:
+${agentRoster}`;
 }
 
 // --- Helper: find sector for agent by name ---
@@ -920,14 +930,19 @@ io.on('connection', (socket) => {
     let effectivePrompt = systemPrompt;
     let effectiveMessage = message;
 
+    // Build office context with agent roster for all roles
+    const officeContext = buildOfficeContext();
+
     if (agentRole === 'ceo') {
       // Use the CEO action prompt with office state context
-      const officeContext = buildOfficeContext();
       effectivePrompt = CEO_ACTION_PROMPT
         .replace('{AGENT_NAME}', agentName)
         .replace('{OFFICE_STATE}', officeContext);
       // Append office state context to the user message
       effectiveMessage = message + '\n\n[Estado do escritório]\n' + officeContext;
+    } else {
+      // All agents get the agent roster so they know who is in the office
+      effectivePrompt = systemPrompt + '\n\n[AGENTES NO ESCRITÓRIO]\n' + officeContext;
     }
 
     // Call AI
@@ -997,6 +1012,7 @@ io.on('connection', (socket) => {
               role: agentRole,
               agentName,
               toSectorId: targetSector,
+              targetAgentName: action.agentName,
               message: action.message,
             });
             io.emit('agent:bubble', {
@@ -1010,11 +1026,12 @@ io.on('connection', (socket) => {
             // Generic: any agent can ask another agent a question
             const targetAgent = findAgentByName(action.agentName);
             if (targetAgent) {
-              // Walk to target
+              // Walk to target agent specifically
               io.emit('agent:walk_to', {
                 role: agentRole,
                 agentName,
                 toSectorId: targetAgent.sectorId,
+                targetAgentName: action.agentName,
                 message: action.question.slice(0, 40),
               });
 
@@ -1037,6 +1054,24 @@ io.on('connection', (socket) => {
               // Return the response in the chat
               socket.emit('chat:response_append', { agentId, response: `\n\n📋 **${targetAgent.name} respondeu:** ${targetResponse}` });
             }
+          } else if (action.type === 'call_meeting' && agentRole === 'ceo') {
+            // CEO calls a meeting: all agents go to the meeting room
+            const allAgents = getActiveAgentsList();
+            const participants = allAgents.map(a => a.name);
+
+            for (const agent of allAgents) {
+              io.emit('agent:walk_to', {
+                agentName: agent.name,
+                toSectorId: 'MEETING_ROOM',
+                message: 'Reunião!',
+              });
+            }
+
+            io.emit('meeting:started', {
+              topic: action.topic || 'Reunião geral',
+              participants,
+            });
+            emitLog(`CEO convocou reunião: ${action.topic || 'Reunião geral'}`);
           }
         }
       } catch (e) {
@@ -1058,6 +1093,40 @@ io.on('connection', (socket) => {
     });
 
     socket.emit('chat:response', { agentId, response });
+  });
+
+  // Meeting message: fan out user message to all participating agents
+  socket.on('meeting:message', async (data: { message: string; topic: string; participants: string[] }) => {
+    const { message, topic, participants } = data;
+
+    for (const participantName of participants) {
+      const agent = findAgentByName(participantName);
+      if (!agent || agent.role === 'ceo') continue;
+
+      const meetingContext = `${agent.systemPrompt}\n\nVocê está numa reunião sobre: ${topic}. Responda de forma breve (2-3 frases). Outros agentes presentes: ${participants.join(', ')}.`;
+
+      try {
+        const response = await chatWithAgent(agent.name, meetingContext, `O operador diz na reunião: ${message}`, []);
+        socket.emit('meeting:response', { agentName: agent.name, role: agent.role, response });
+        io.emit('agent:bubble', {
+          agentName: agent.name,
+          text: response.slice(0, 40),
+          type: 'chat',
+          duration: 4000,
+        });
+      } catch (e) {
+        console.error(`Meeting response error for ${agent.name}:`, e);
+      }
+    }
+  });
+
+  // Meeting end: return all agents to their seats
+  socket.on('meeting:end', () => {
+    const allAgents = getActiveAgentsList();
+    for (const agent of allAgents) {
+      io.emit('agent:return_to_seat', { agentName: agent.name });
+    }
+    emitLog('Reunião encerrada - agentes retornando aos postos');
   });
 
   // Rename agent

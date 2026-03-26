@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { OfficeCanvas } from './components/OfficeCanvas';
 import { ControlPanel } from './components/ControlPanel';
 import { StatusBar } from './components/StatusBar';
@@ -57,6 +58,7 @@ function ContextMenu() {
 export default function App() {
   // Connect to backend WebSocket
   useWebSocket();
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
@@ -64,13 +66,38 @@ export default function App() {
         <div style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden' }}>
           <OfficeCanvas />
         </div>
+        {/* Collapse toggle button */}
+        <button
+          onClick={() => setPanelCollapsed(v => !v)}
+          title={panelCollapsed ? 'Expandir painel' : 'Colapsar painel'}
+          style={{
+            flexShrink: 0,
+            width: 20,
+            background: '#0f3460',
+            border: 'none',
+            borderLeft: '1px solid #1a4a8a',
+            borderRight: '1px solid #1a4a8a',
+            color: '#a0c4ff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            padding: 0,
+          }}
+        >
+          {panelCollapsed ? '◀' : '▶'}
+        </button>
         <div style={{
-          width: 320, flexShrink: 0,
+          width: panelCollapsed ? 0 : 320,
+          minWidth: 0,
+          flexShrink: 0,
           background: '#16213e',
-          borderLeft: '2px solid #0f3460',
+          borderLeft: panelCollapsed ? 'none' : '2px solid #0f3460',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          transition: 'width 0.15s ease',
         }}>
           <ControlPanel />
         </div>

@@ -127,8 +127,8 @@ export function useWebSocket() {
       }
     });
 
-    // Agent walk-to event: make an agent walk to a target sector with a speech bubble
-    socket.on('agent:walk_to', (data: { role?: string; agentName?: string; toSectorId: string; message?: string }) => {
+    // Agent walk-to event: make an agent walk to a target sector or specific agent
+    socket.on('agent:walk_to', (data: { role?: string; agentName?: string; toSectorId: string; targetAgentName?: string; message?: string }) => {
       const store = useOfficeStore.getState();
       const os = store.officeState;
       if (!os) return;
@@ -153,11 +153,34 @@ export function useWebSocket() {
       }
       if (!agent) return;
 
-      os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
+      // If targeting a specific agent, walk to their position
+      if (data.targetAgentName) {
+        const success = os.sendAgentToAgent(agent.id, data.targetAgentName);
+        if (!success) {
+          // Fallback to sector walk
+          os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
+        }
+        store.addLogEntry(`${agent.name} indo falar com ${data.targetAgentName}`);
+      } else {
+        os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
+        store.addLogEntry(`${agent.name} caminhando para ${data.toSectorId}`);
+      }
+
       if (data.message) {
         addBubble(agent, data.message, 'handoff', 4);
       }
-      store.addLogEntry(`${agent.name} caminhando para ${data.toSectorId}`);
+    });
+
+    // Agent return-to-seat event
+    socket.on('agent:return_to_seat', (data: { agentName: string }) => {
+      const os = useOfficeStore.getState().officeState;
+      if (!os) return;
+      for (const ch of os.characters.values()) {
+        if (ch.name === data.agentName) {
+          os.returnAgentToSeat(ch.id);
+          break;
+        }
+      }
     });
 
     // Agent bubble event: show a speech bubble on an agent
@@ -203,6 +226,15 @@ export function useWebSocket() {
           store.addLogEntry(`CEO demitiu: ${data.agentName}`);
         }
       }
+    });
+
+    // Meeting events
+    socket.on('meeting:started', (data: { topic: string; participants: string[] }) => {
+      useOfficeStore.getState().startMeeting(data.topic, data.participants);
+    });
+
+    socket.on('meeting:response', (data: { agentName: string; role: string; response: string }) => {
+      useOfficeStore.getState().onMeetingResponse(data.agentName, data.role, data.response);
     });
 
     // Agents sync from DB: restore agents in the office on reconnect

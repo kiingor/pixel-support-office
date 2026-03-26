@@ -60,6 +60,15 @@ interface ActiveConversation {
   channelId: string;
 }
 
+interface MeetingMessage {
+  id: string;
+  from: 'user' | 'agent';
+  agentName?: string;
+  agentRole?: string;
+  text: string;
+  timestamp: number;
+}
+
 interface OfficeStoreState {
   officeState: OfficeState | null;
   socket: Socket | null;
@@ -75,6 +84,12 @@ interface OfficeStoreState {
   chatLoading: boolean;
   queueSize: number;
   activeConversations: Map<string, ActiveConversation>;
+  // Meeting state
+  meetingActive: boolean;
+  meetingTopic: string;
+  meetingParticipants: string[];
+  meetingMessages: MeetingMessage[];
+  meetingLoading: boolean;
 
   setOfficeState: (os: OfficeState) => void;
   setSocket: (s: Socket) => void;
@@ -98,6 +113,10 @@ interface OfficeStoreState {
   setContextMenu: (menu: ContextMenu | null) => void;
   setQueueSize: (size: number) => void;
   updateActiveConversation: (channelId: string, data: ActiveConversation) => void;
+  startMeeting: (topic: string, participants: string[]) => void;
+  endMeeting: () => void;
+  sendMeetingMessage: (text: string) => void;
+  onMeetingResponse: (agentName: string, role: string, response: string) => void;
 }
 
 let msgCounter = 0;
@@ -117,6 +136,11 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   chatLoading: false,
   queueSize: 0,
   activeConversations: new Map(),
+  meetingActive: false,
+  meetingTopic: '',
+  meetingParticipants: [],
+  meetingMessages: [],
+  meetingLoading: false,
 
   setOfficeState: (os) => set({ officeState: os }),
   setSocket: (s) => set({ socket: s }),
@@ -343,5 +367,71 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     const conversations = new Map(get().activeConversations);
     conversations.set(channelId, data);
     set({ activeConversations: conversations });
+  },
+
+  startMeeting: (topic, participants) => {
+    set({
+      meetingActive: true,
+      meetingTopic: topic,
+      meetingParticipants: participants,
+      meetingMessages: [],
+      meetingLoading: false,
+      chatAgentId: null, // Close any individual chat
+    });
+    get().addLogEntry(`Reunião iniciada: ${topic}`);
+  },
+
+  endMeeting: () => {
+    const socket = get().socket;
+    if (socket) {
+      socket.emit('meeting:end');
+    }
+    set({
+      meetingActive: false,
+      meetingTopic: '',
+      meetingParticipants: [],
+      meetingMessages: [],
+      meetingLoading: false,
+    });
+    get().addLogEntry('Reunião encerrada');
+  },
+
+  sendMeetingMessage: (text) => {
+    const { socket, meetingTopic, meetingParticipants, meetingMessages } = get();
+    if (!socket) return;
+
+    const newMsg: MeetingMessage = {
+      id: `meeting_${++msgCounter}`,
+      from: 'user',
+      text,
+      timestamp: Date.now(),
+    };
+
+    set({
+      meetingMessages: [...meetingMessages, newMsg],
+      meetingLoading: true,
+    });
+
+    socket.emit('meeting:message', {
+      message: text,
+      topic: meetingTopic,
+      participants: meetingParticipants,
+    });
+  },
+
+  onMeetingResponse: (agentName, role, response) => {
+    const msgs = get().meetingMessages;
+    const newMsg: MeetingMessage = {
+      id: `meeting_${++msgCounter}`,
+      from: 'agent',
+      agentName,
+      agentRole: role,
+      text: response,
+      timestamp: Date.now(),
+    };
+    set({
+      meetingMessages: [...msgs, newMsg],
+      meetingLoading: false,
+    });
   },
 }));

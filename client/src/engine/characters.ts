@@ -67,11 +67,16 @@ export function updateCharacter(
   tiles: TileType[][],
   blockedTiles: Set<string>,
 ): void {
-  // Update animation timer
-  ch.animTimer += dt;
-  if (ch.animTimer >= ANIM_FRAME_DURATION) {
-    ch.animTimer -= ANIM_FRAME_DURATION;
-    ch.animFrame++;
+  // Update animation timer — only advance frames while walking
+  if (ch.state === CharacterState.WALK) {
+    ch.animTimer += dt;
+    if (ch.animTimer >= ANIM_FRAME_DURATION) {
+      ch.animTimer -= ANIM_FRAME_DURATION;
+      ch.animFrame++;
+    }
+  } else {
+    ch.animFrame = 0;
+    ch.animTimer = 0;
   }
 
   // Update bubbles (remove expired)

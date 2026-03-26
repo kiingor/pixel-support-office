@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useOfficeStore } from '../stores/officeStore';
 import { AgentChat } from './AgentChat';
+import { MeetingChat } from './MeetingChat';
 import type { AgentRole } from '../types/agents';
 
 const TABS = ['Equipe', 'Fila', 'Casos', 'Logs'] as const;
@@ -26,8 +27,13 @@ export function ControlPanel() {
   const {
     agents, selectedAgentId, selectAgent, openChat,
     logEntries, tickets, cases, chatAgentId, resolveCase,
-    queueSize,
+    queueSize, meetingActive,
   } = useOfficeStore();
+
+  // Meeting takes priority
+  if (meetingActive) {
+    return <MeetingChat />;
+  }
 
   // If chat is open, show the chat panel instead
   if (chatAgentId) {
