@@ -10,6 +10,8 @@ import {
   dbGetCases, dbGetPendingTickets, dbInsertLog, dbGetRecentLogs,
   dbLogAgentMessage, dbSaveMessage, dbGetConversation,
   dbUpdateCase, dbUpdateAgent,
+  dbCreateAgent, dbFireAgent, dbGetActiveAgents,
+  supabase,
 } from './db/supabase.js';
 import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent } from './services/aiService.js';
 import { initDiscord, sendDiscordMessage } from './services/discord.js';
@@ -273,6 +275,12 @@ app.get('/api/conversations/:channelId', async (req, res) => {
 // Get support agents status
 app.get('/api/agents/support', (_, res) => {
   res.json({ agents: supportAgents, queueSize: ticketQueue.length });
+});
+
+// Get all active agents from DB (for frontend persistence)
+app.get('/api/agents', async (_, res) => {
+  const agents = await dbGetActiveAgents();
+  res.json({ agents });
 });
 
 // --- DISCORD MESSAGE HANDLER ---
@@ -596,9 +604,16 @@ async function runLogAnalysis() {
 io.on('connection', (socket) => {
   console.log('[Socket] Client connected:', socket.id);
 
-  // Send current agent roster and queue state on connect
+  // Send current support agent roster and queue state on connect
   socket.emit('agents:list', supportAgents);
   socket.emit('queue:updated', { size: ticketQueue.length });
+
+  // Send all active agents from DB (for frontend persistence/restore)
+  dbGetActiveAgents().then(activeAgents => {
+    socket.emit('agents:sync', { agents: activeAgents });
+  }).catch(() => {
+    socket.emit('agents:sync', { agents: [] });
+  });
 
   // --- Multi-agent registration ---
   socket.on('agent:register', (data: { id: string; name: string }) => {
@@ -627,8 +642,24 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Agent hired: register + auto-assign from queue
-  socket.on('agent:hired', (data: { id: string; name: string }) => {
+  // Agent fired: remove from supportAgents + mark fired in DB
+  socket.on('agent:fired', async (data: { id: string; name?: string; role?: string }) => {
+    const idx = supportAgents.findIndex(a => a.id === data.id);
+    if (idx !== -1) {
+      supportAgents.splice(idx, 1);
+    }
+    // Mark as fired in DB
+    try {
+      await dbFireAgent(data.id);
+    } catch (e) {
+      console.error('Failed to fire agent in DB:', e);
+    }
+    emitLog(`Agente demitido: ${data.name || data.id}`);
+    io.emit('agents:list', supportAgents);
+  });
+
+  // Agent hired: register + persist to DB + auto-assign from queue
+  socket.on('agent:hired', async (data: { id: string; name: string; role?: string; position_x?: number; position_y?: number; sprite_index?: number }) => {
     let agent = supportAgents.find(a => a.id === data.id);
     if (!agent) {
       agent = {
@@ -644,6 +675,20 @@ io.on('connection', (socket) => {
       agent.busy = false;
       agent.currentChannelId = null;
     }
+
+    // Persist to Supabase
+    try {
+      await dbCreateAgent({
+        name: data.name,
+        type: data.role || 'suporte',
+        system_prompt: '',
+        personality: '',
+        specialization: '',
+      });
+    } catch (e) {
+      console.error('Failed to persist agent to DB:', e);
+    }
+
     io.emit('agents:list', supportAgents);
 
     // Auto-assign from queue if there are pending tickets
@@ -728,6 +773,78 @@ async function start() {
 
   const dbOk = await initDatabase();
   if (!dbOk) console.warn('Database not fully initialized. Run schema.sql in Supabase.');
+
+  // Load active agents from DB into supportAgents array
+  if (dbOk) {
+    try {
+      const dbAgents = await dbGetActiveAgents();
+      for (const a of dbAgents) {
+        // Only add support-type agents to the supportAgents array (for ticket routing)
+        if (a.type === 'suporte') {
+          const existing = supportAgents.find(sa => sa.id === a.id);
+          if (!existing) {
+            supportAgents.push({
+              id: a.id,
+              name: a.name,
+              busy: false,
+              currentChannelId: null,
+            });
+          }
+        }
+      }
+      console.log(`[Server] Loaded ${dbAgents.length} agents from DB (${supportAgents.length} support agents)`);
+    } catch (e) {
+      console.error('Failed to load agents from DB:', e);
+    }
+
+    // Load counters from DB so they continue from where they left off
+    try {
+      const { data: maxBug } = await supabase
+        .from('queue')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (maxBug && maxBug.length > 0) {
+        bugCounter = maxBug.length; // At minimum, count existing tickets
+      }
+      // Try to get the actual max BUG-N number from cases
+      const { data: cases } = await supabase
+        .from('cases')
+        .select('bug_id')
+        .order('created_at', { ascending: false });
+      if (cases && cases.length > 0) {
+        for (const c of cases) {
+          if (c.bug_id) {
+            const match = c.bug_id.match(/BUG-(\d+)/);
+            if (match) {
+              const num = parseInt(match[1]);
+              if (num > bugCounter) bugCounter = num;
+            }
+          }
+        }
+      }
+
+      // Load case counter
+      const { data: maxCase } = await supabase
+        .from('cases')
+        .select('caso_id')
+        .order('created_at', { ascending: false });
+      if (maxCase && maxCase.length > 0) {
+        for (const c of maxCase) {
+          if (c.caso_id) {
+            const match = c.caso_id.match(/CASE-(\d+)/);
+            if (match) {
+              const num = parseInt(match[1]);
+              if (num > caseCounter) caseCounter = num;
+            }
+          }
+        }
+      }
+      console.log(`[Server] Counters loaded: bugCounter=${bugCounter}, caseCounter=${caseCounter}`);
+    } catch (e) {
+      console.error('Failed to load counters from DB:', e);
+    }
+  }
 
   const discordOk = await initDiscord((author, content, channelId) => {
     handleDiscordMessage(author, content, channelId);

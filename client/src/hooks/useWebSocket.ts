@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
 import { addBubble } from '../engine/characters';
-import type { SectorId } from '../types/agents';
+import type { SectorId, AgentRole } from '../types/agents';
 
 // In production, connect to same host. In dev, use localhost:3001
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
@@ -139,6 +139,27 @@ export function useWebSocket() {
           break;
         }
       }
+    });
+
+    // Agents sync from DB: restore agents in the office on reconnect
+    socket.on('agents:sync', (data: { agents: Array<{ id: string; name: string; type: string }> }) => {
+      const store = useOfficeStore.getState();
+      const os = store.officeState;
+      if (!os) return;
+
+      // Only apply if we have no characters yet (initial load handled by useGameEngine fetch)
+      // This handles reconnection scenarios
+      if (os.characters.size > 0) return;
+
+      for (const agent of data.agents) {
+        const role = (agent.type || 'suporte') as AgentRole;
+        const ch = os.addAgent(role);
+        if (ch) {
+          ch.name = agent.name;
+        }
+      }
+      store.syncAgents();
+      store.addLogEntry('Agentes restaurados do servidor');
     });
 
     // Queue updated event: update queue count in store

@@ -7,6 +7,25 @@ import { setLoadedCharacters } from '../sprites/characterSprites';
 import { setLoadedFloors, setLoadedWalls } from '../sprites/tileSprites';
 import { setLoadedFurniture } from '../sprites/furnitureSprites';
 import { clearSpriteCache } from '../engine/spriteCache';
+import type { AgentRole } from '../types/agents';
+
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
+);
+
+function createDefaultAgents(officeState: OfficeState) {
+  const defaultRoles: AgentRole[] = ['ceo', 'suporte', 'qa', 'dev', 'log_analyzer'];
+  for (const role of defaultRoles) {
+    const ch = officeState.addAgent(role);
+    if (ch) {
+      // Notify backend to save (if connected via socket)
+      const socket = useOfficeStore.getState().socket;
+      if (socket) {
+        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role });
+      }
+    }
+  }
+}
 
 export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const [officeState] = useState(() => new OfficeState());
@@ -49,20 +68,9 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
     const store = useOfficeStore.getState();
     store.setOfficeState(officeState);
 
-    // Spawn initial agents
-    officeState.addAgent('ceo');
-    officeState.addAgent('suporte');
-    officeState.addAgent('qa');
-    officeState.addAgent('dev');
-    officeState.addAgent('log_analyzer');
-
     // Center the view
     officeState.panX = 20;
     officeState.panY = 20;
-
-    store.syncAgents();
-    store.addLogEntry('Sistema iniciado - Modo Demo');
-    store.addLogEntry('Agentes iniciais contratados');
 
     // Listen for events
     officeState.onEvent((event) => {
@@ -75,6 +83,40 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
           break;
       }
     });
+
+    // Fetch agents from backend - if available, restore from DB; otherwise create defaults
+    fetch(`${SERVER_URL}/api/agents`)
+      .then(res => res.json())
+      .then(data => {
+        const agents = data.agents || [];
+        if (agents.length > 0) {
+          // Restore agents from DB
+          for (const agent of agents) {
+            const role = (agent.type || 'suporte') as AgentRole;
+            const ch = officeState.addAgent(role);
+            if (ch) {
+              ch.name = agent.name;
+              // Keep the DB id association via name matching
+            }
+          }
+          store.syncAgents();
+          store.addLogEntry('Sistema conectado - Modo Produção');
+          store.addLogEntry(`${agents.length} agentes carregados do servidor`);
+        } else {
+          // No agents in DB - create defaults and save them via socket events
+          createDefaultAgents(officeState);
+          store.syncAgents();
+          store.addLogEntry('Sistema conectado - Modo Produção');
+          store.addLogEntry('Agentes iniciais contratados e salvos');
+        }
+      })
+      .catch(() => {
+        // Backend unreachable - create defaults locally (demo mode)
+        createDefaultAgents(officeState);
+        store.syncAgents();
+        store.addLogEntry('Sistema iniciado - Modo Demo (offline)');
+        store.addLogEntry('Agentes iniciais contratados (local)');
+      });
   }, [assetsLoaded, officeState]);
 
   // Game loop

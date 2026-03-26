@@ -5,6 +5,10 @@ import { DEFAULT_PROMPTS, DEFAULT_PERSONALITIES, DEFAULT_SPECIALIZATIONS } from 
 import type { OfficeState } from '../engine/officeState';
 import type { Socket } from 'socket.io-client';
 
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
+);
+
 interface AgentInfo {
   id: string;
   name: string;
@@ -283,8 +287,7 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   resolveCase: (casoId) => {
     const socket = get().socket;
     // Call API to resolve
-    const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3001' : '';
-    fetch(`${baseUrl}/api/cases/${casoId}/resolve`, { method: 'POST' })
+    fetch(`${SERVER_URL}/api/cases/${casoId}/resolve`, { method: 'POST' })
       .then(() => {
         get().updateCase(casoId, { status: 'resolved' });
         get().addLogEntry(`Caso ${casoId} resolvido!`);
