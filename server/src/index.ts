@@ -43,6 +43,24 @@ interface SupportAgent {
 const supportAgents: SupportAgent[] = [];
 const ticketQueue: Array<{ author: string; content: string; channelId: string }> = [];
 
+// In-memory conversation history fallback (in case DB fails)
+const memoryConversations = new Map<string, Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>>();
+
+function addToMemory(channelId: string, role: 'user' | 'assistant', content: string) {
+  if (!memoryConversations.has(channelId)) {
+    memoryConversations.set(channelId, []);
+  }
+  const history = memoryConversations.get(channelId)!;
+  history.push({ role, content, timestamp: Date.now() });
+  // Keep only last 30 messages per channel
+  if (history.length > 30) history.splice(0, history.length - 30);
+}
+
+function getMemoryHistory(channelId: string, limit = 20): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const history = memoryConversations.get(channelId) || [];
+  return history.slice(-limit).map(m => ({ role: m.role, content: m.content }));
+}
+
 // Active tickets per Discord channel
 const activeChannels = new Map<string, {
   ticketId: string;
@@ -360,14 +378,7 @@ app.get('/api/agents', async (_, res) => {
 // This is the core: every Discord message goes through here
 
 async function handleDiscordMessage(author: string, content: string, channelId: string, assignedAgent?: SupportAgent) {
-  // Save user message to conversations
-  await dbSaveMessage({
-    channel_id: channelId,
-    role: 'user',
-    author_name: author,
-    message: content,
-  });
-
+  // Note: message is saved inside handleSupportMessage to avoid duplicates
   io.emit('discord:message', { author, content, channelId });
 
   // Check if there's an active ticket for this channel
@@ -413,12 +424,18 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
 // --- SUPPORT AGENT ---
 
 async function handleSupportMessage(channelId: string, author: string, message: string, ticketId: string, agentId?: string) {
-  // Get conversation history for context
-  const history = await dbGetConversation(channelId, 15);
-  const conversationContext = history.map(m => ({
-    role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
-    content: `${m.author_name}: ${m.message}`,
-  }));
+  // Save user message to memory and DB
+  addToMemory(channelId, 'user', `${author}: ${message}`);
+  await dbSaveMessage({ channel_id: channelId, role: 'user', author_name: author, message });
+
+  // Get conversation history - try DB first, fallback to memory
+  const dbHistory = await dbGetConversation(channelId, 15);
+  const conversationContext = dbHistory.length > 0
+    ? dbHistory.map(m => ({
+        role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
+        content: `${m.author_name}: ${m.message}`,
+      }))
+    : getMemoryHistory(channelId, 15);
 
   // Determine which agent name to use for this channel
   const existingChannel = activeChannels.get(channelId);
@@ -545,6 +562,8 @@ async function sendSupportResponse(channelId: string, ticketId: string, response
   // Clean any JSON from the response for Discord
   const cleanResponse = response.replace(/```json[\s\S]*?```/g, '').replace(/\{[\s\S]*"acao"[\s\S]*\}/g, '').trim();
 
+  // Save to memory and DB
+  addToMemory(channelId, 'assistant', `${agentName}: ${cleanResponse}`);
   await dbSaveMessage({
     channel_id: channelId,
     ticket_id: ticketId,
@@ -795,8 +814,9 @@ io.on('connection', (socket) => {
   socket.on('chat:message', async (data) => {
     const { agentId, agentName, agentRole, systemPrompt, message, history } = data;
 
-    // Save user message
+    // Save user message to memory and DB
     const channelId = `dashboard_${agentId}`;
+    addToMemory(channelId, 'user', message);
     await dbSaveMessage({
       channel_id: channelId,
       agent_id: agentId,
@@ -805,12 +825,14 @@ io.on('connection', (socket) => {
       message,
     });
 
-    // Get full history from DB for context
+    // Get conversation history - try DB first, fallback to memory
     const dbHistory = await dbGetConversation(channelId, 20);
-    const contextHistory = dbHistory.map(m => ({
-      role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
-      content: m.message,
-    }));
+    const contextHistory = dbHistory.length > 0
+      ? dbHistory.map(m => ({
+          role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
+          content: m.message,
+        }))
+      : getMemoryHistory(channelId, 20);
 
     // Build the effective system prompt
     let effectivePrompt = systemPrompt;
@@ -880,7 +902,8 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Save agent response
+    // Save agent response to memory and DB
+    addToMemory(channelId, 'assistant', response);
     await dbSaveMessage({
       channel_id: channelId,
       agent_id: agentId,
