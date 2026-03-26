@@ -7,7 +7,7 @@ import { v4 as uuid } from 'uuid';
 
 import {
   initDatabase, dbCreateTicket, dbUpdateTicket, dbCreateCase,
-  dbGetCases, dbGetPendingTickets, dbInsertLog, dbGetRecentLogs,
+  dbGetCases, dbGetPendingTickets, dbGetAllTickets, dbInsertLog, dbGetRecentLogs,
   dbLogAgentMessage, dbSaveMessage, dbGetConversation,
   dbUpdateCase, dbUpdateAgent,
   dbCreateAgent, dbFireAgent, dbGetActiveAgents,
@@ -296,9 +296,36 @@ app.post('/api/tickets', async (req, res) => {
   res.json({ success: true, ticket });
 });
 
-app.get('/api/tickets', async (_, res) => {
-  const tickets = await dbGetPendingTickets();
-  res.json(tickets);
+// Full state endpoint - returns everything the frontend needs on load
+app.get('/api/state', async (_, res) => {
+  try {
+    const agents = await dbGetActiveAgents();
+    const tickets = await dbGetAllTickets(100);
+    const cases = await dbGetCases();
+    const logs = await dbGetRecentLogs(50);
+    const queueSize = ticketQueue.length;
+
+    res.json({ agents, tickets, cases, logs, queueSize, supportAgents });
+  } catch (e) {
+    console.error('GET /api/state error:', e);
+    res.status(500).json({ error: 'Failed to load state' });
+  }
+});
+
+app.get('/api/tickets', async (req, res) => {
+  const status = req.query.status as string | undefined;
+  if (status) {
+    const { data } = await supabase
+      .from('queue')
+      .select('*')
+      .eq('status', status)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    res.json(data || []);
+  } else {
+    const tickets = await dbGetAllTickets(100);
+    res.json(tickets);
+  }
 });
 
 app.get('/api/cases', async (_, res) => {

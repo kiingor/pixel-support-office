@@ -44,6 +44,14 @@ export function useWebSocket() {
       store.addLogEntry(`Novo ticket de ${ticket.discord_author} (${ticket.source})`);
     });
 
+    socket.on('ticket:updated', (data) => {
+      const store = useOfficeStore.getState();
+      store.updateTicket(data.id || data.ticketId, {
+        status: data.status,
+        classification: data.classification,
+      });
+    });
+
     socket.on('ticket:completed', (data) => {
       const store = useOfficeStore.getState();
       store.updateTicket(data.ticketId, { status: 'done', classification: data.classification });

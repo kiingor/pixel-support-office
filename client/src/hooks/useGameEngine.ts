@@ -84,19 +84,25 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
       }
     });
 
-    // Fetch agents from backend - if available, restore from DB; otherwise create defaults
-    fetch(`${SERVER_URL}/api/agents`)
+    // Fetch full state from backend - restore agents, tickets, cases, logs from DB
+    fetch(`${SERVER_URL}/api/state`)
       .then(res => res.json())
-      .then(data => {
-        const agents = data.agents || [];
+      .then((state: {
+        agents: Array<{ id: string; name: string; type: string }>;
+        tickets: Array<{ id: string; discord_author?: string; discord_message?: string; status: string; classification?: string; created_at: string }>;
+        cases: Array<{ id: string; caso_id: string; bug_id?: string; titulo: string; prompt_ia?: string; status: string }>;
+        logs: Array<{ level: string; message: string; created_at: string }>;
+        queueSize: number;
+      }) => {
+        const agents = state.agents || [];
         if (agents.length > 0) {
           // Restore agents from DB
           for (const agent of agents) {
             const role = (agent.type || 'suporte') as AgentRole;
             const ch = officeState.addAgent(role);
             if (ch) {
+              ch.id = agent.id;
               ch.name = agent.name;
-              // Keep the DB id association via name matching
             }
           }
           store.syncAgents();
@@ -108,6 +114,45 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
           store.syncAgents();
           store.addLogEntry('Sistema conectado - Modo Produção');
           store.addLogEntry('Agentes iniciais contratados e salvos');
+        }
+
+        // Populate tickets from DB
+        const tickets = state.tickets || [];
+        for (const ticket of tickets) {
+          store.addTicket({
+            id: ticket.id,
+            discordAuthor: ticket.discord_author,
+            discordMessage: ticket.discord_message,
+            status: ticket.status,
+            classification: ticket.classification,
+            createdAt: new Date(ticket.created_at).getTime(),
+          });
+        }
+
+        // Populate cases from DB
+        const cases = state.cases || [];
+        for (const c of cases) {
+          store.addCase({
+            id: c.id,
+            casoId: c.caso_id,
+            bugId: c.bug_id,
+            titulo: c.titulo,
+            promptIa: c.prompt_ia,
+            status: c.status,
+          });
+        }
+
+        // Populate logs from DB (oldest first since they are returned desc)
+        const logs = (state.logs || []).reverse();
+        for (const log of logs) {
+          store.addLogEntry(`[${log.level}] ${log.message}`);
+        }
+
+        // Set queue size
+        store.setQueueSize(state.queueSize || 0);
+
+        if (tickets.length > 0 || cases.length > 0) {
+          store.addLogEntry(`Estado restaurado: ${tickets.length} tickets, ${cases.length} casos`);
         }
       })
       .catch(() => {

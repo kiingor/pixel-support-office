@@ -93,6 +93,17 @@ export async function dbGetPendingTickets(type?: string) {
   return data || [];
 }
 
+// Get all tickets (recent, any status)
+export async function dbGetAllTickets(limit = 100) {
+  const { data, error } = await supabase
+    .from('queue')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetAllTickets error:', error);
+  return data || [];
+}
+
 // Cases
 export async function dbCreateCase(c: {
   caso_id: string;

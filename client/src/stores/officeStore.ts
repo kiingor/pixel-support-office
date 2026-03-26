@@ -150,12 +150,20 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     set(state => ({ logEntries: [...state.logEntries.slice(-100), { time, message }] }));
   },
 
-  addTicket: (ticket) => set(state => ({ tickets: [...state.tickets, ticket] })),
+  addTicket: (ticket) => set(state => {
+    // Prevent duplicates (ticket may already exist from initial state load)
+    if (state.tickets.some(t => t.id === ticket.id)) return state;
+    return { tickets: [...state.tickets, ticket] };
+  }),
   updateTicket: (id, updates) => set(state => ({
     tickets: state.tickets.map(t => t.id === id ? { ...t, ...updates } : t),
   })),
 
-  addCase: (c) => set(state => ({ cases: [...state.cases, c] })),
+  addCase: (c) => set(state => {
+    // Prevent duplicates (case may already exist from initial state load)
+    if (state.cases.some(existing => existing.casoId === c.casoId)) return state;
+    return { cases: [...state.cases, c] };
+  }),
   updateCase: (casoId, updates) => set(state => ({
     cases: state.cases.map(c => c.casoId === casoId ? { ...c, ...updates } : c),
   })),
@@ -193,7 +201,32 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     setTimeout(() => get().syncAgents(), 100);
   },
 
-  openChat: (agentId) => set({ chatAgentId: agentId }),
+  openChat: (agentId) => {
+    set({ chatAgentId: agentId });
+
+    // Load chat history from backend if not already loaded
+    const existing = get().chatHistories.get(agentId);
+    if (!existing || existing.length === 0) {
+      const channelId = `dashboard_${agentId}`;
+      fetch(`${SERVER_URL}/api/conversations/${channelId}`)
+        .then(res => res.json())
+        .then((history: Array<{ role: string; author_name: string; message: string; created_at: string }>) => {
+          if (!history || history.length === 0) return;
+          const histories = new Map(get().chatHistories);
+          const messages: ChatMessage[] = history.map((m, i) => ({
+            id: `db_${i}`,
+            from: m.role === 'agent' ? 'agent' as const : 'user' as const,
+            text: m.message,
+            timestamp: new Date(m.created_at).getTime(),
+          }));
+          histories.set(agentId, messages);
+          set({ chatHistories: histories });
+        })
+        .catch(e => {
+          console.error('Failed to load chat history:', e);
+        });
+    }
+  },
   closeChat: () => set({ chatAgentId: null }),
 
   // Send chat message via WebSocket to backend (real AI)
