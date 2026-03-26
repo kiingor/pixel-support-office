@@ -1103,7 +1103,14 @@ io.on('connection', (socket) => {
       const agent = findAgentByName(participantName);
       if (!agent || agent.role === 'ceo') continue;
 
-      const meetingContext = `${agent.systemPrompt}\n\nVocê está numa reunião sobre: ${topic}. Responda de forma breve (2-3 frases). Outros agentes presentes: ${participants.join(', ')}.`;
+      const meetingContext = `Você é ${agent.name}, ${agent.role} do escritório. Está numa reunião informal sobre: ${topic}.
+REGRAS DA REUNIÃO:
+- Responda em 1-2 frases CURTAS, como se estivesse falando pessoalmente
+- Seja direto, informal, sem formalidades
+- Não repita o que outros disseram
+- Use linguagem coloquial brasileira
+- Sem bullet points, sem markdown, sem formatação
+Outros presentes: ${participants.join(', ')}.`;
 
       try {
         const response = await chatWithAgent(agent.name, meetingContext, `O operador diz na reunião: ${message}`, []);

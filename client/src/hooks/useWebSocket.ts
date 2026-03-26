@@ -157,10 +157,13 @@ export function useWebSocket() {
       if (data.targetAgentName) {
         const success = os.sendAgentToAgent(agent.id, data.targetAgentName);
         if (!success) {
-          // Fallback to sector walk
           os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
         }
         store.addLogEntry(`${agent.name} indo falar com ${data.targetAgentName}`);
+      } else if (data.toSectorId === 'MEETING_ROOM') {
+        // Meeting room: sit at the table
+        os.sendAgentToMeetingRoom(agent.id);
+        store.addLogEntry(`${agent.name} indo para a reuniao`);
       } else {
         os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
         store.addLogEntry(`${agent.name} caminhando para ${data.toSectorId}`);

@@ -158,6 +158,68 @@ export class OfficeState {
     return success;
   }
 
+  /** Send an agent to sit in the meeting room. */
+  sendAgentToMeetingRoom(agentId: string): boolean {
+    const ch = this.characters.get(agentId);
+    if (!ch) return false;
+
+    // Find an available meeting room seat
+    const meetingSector = SECTORS['MEETING_ROOM'];
+    let targetSeat: { col: number; row: number; facingDir: number } | null = null;
+
+    for (const seatPos of meetingSector.seatPositions) {
+      // Check if any other character is already targeting or sitting at this seat
+      let occupied = false;
+      for (const other of this.characters.values()) {
+        if (other.id !== ch.id && other.col === seatPos.col && other.row === seatPos.row) {
+          occupied = true;
+          break;
+        }
+      }
+      // Also check meeting seats already claimed by pending walkers
+      if (!occupied) {
+        for (const arrival of this.pendingArrivals.values()) {
+          if (arrival.targetSeat === `meeting_${seatPos.col}_${seatPos.row}`) {
+            occupied = true;
+            break;
+          }
+        }
+      }
+      if (!occupied) {
+        targetSeat = seatPos;
+        break;
+      }
+    }
+
+    if (!targetSeat) {
+      // No seats available, walk to door instead
+      return this.sendAgentToSector(agentId, 'MEETING_ROOM');
+    }
+
+    ch.targetSectorId = 'MEETING_ROOM';
+    ch.state = CharacterState.WALK;
+
+    const success = sendCharacterTo(ch, targetSeat.col, targetSeat.row, this.tiles, this.blockedTiles);
+
+    if (success) {
+      const seat = targetSeat;
+      this.pendingArrivals.set(ch.id, {
+        targetSeat: `meeting_${seat.col}_${seat.row}`,
+        callback: () => {
+          ch.targetSectorId = null;
+          ch.direction = seat.facingDir;
+          ch.col = seat.col;
+          ch.row = seat.row;
+          ch.pixelX = seat.col * TILE_SIZE;
+          ch.pixelY = seat.row * TILE_SIZE;
+          ch.state = CharacterState.TALK;
+        },
+      });
+    }
+
+    return success;
+  }
+
   /** Send an agent to walk to another agent's position. */
   sendAgentToAgent(agentId: string, targetAgentName: string, callback?: () => void): boolean {
     const ch = this.characters.get(agentId);
