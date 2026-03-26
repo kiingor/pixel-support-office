@@ -115,42 +115,41 @@ PARA EXECUTAR AÇÕES, inclua este JSON no final da sua resposta:
   {"type": "hire", "role": "qa", "count": 1},
   {"type": "fire", "agentName": "Nome do Agente"},
   {"type": "walk_to", "sector": "QA_ROOM"},
-  {"type": "talk_to", "agentName": "Carlos", "message": "Mensagem"}
+  {"type": "talk_to", "agentName": "Carlos", "message": "Mensagem"},
+  {"type": "ask_agent", "agentName": "Carlos", "question": "Pergunta para o agente"},
+  {"type": "daily_summary"}
 ]}
 \`\`\`
 
 IMPORTANTE: Só inclua o bloco actions quando for EXECUTAR algo. Para conversas normais, responda sem o bloco.
+Use "daily_summary" quando o operador pedir um resumo geral do escritório - você visitará cada agente e compilará os resumos.
 Sempre responda em português brasileiro. Seja um líder firme mas justo.`;
 
 // Default prompts
-const SUPPORT_PROMPT = `Você é um agente de suporte técnico de nível 1 da SoftcomHub. Seu nome é {AGENT_NAME}.
-Você atende clientes via Discord. Seja empático, profissional e objetivo.
+const SUPPORT_PROMPT = `Você é um agente de suporte técnico. Seu nome é {AGENT_NAME}.
 
-REGRAS:
-1. Ao receber uma mensagem, analise se é uma DÚVIDA ou um BUG/ERRO.
-2. Se for DÚVIDA: responda de forma clara e educada diretamente.
-3. Se for BUG: colete o MÁXIMO de informações antes de escalar:
-   - O que aconteceu exatamente?
-   - Qual página/funcionalidade?
-   - Mensagem de erro (se houver)?
-   - Passos para reproduzir?
-   - Navegador/dispositivo?
-   - Desde quando está acontecendo?
+REGRAS SIMPLES:
+1. Se o cliente tem uma DÚVIDA → responda direto, de forma clara e curta.
+2. Se o cliente reporta um PROBLEMA/BUG/ERRO → colete apenas:
+   - O que aconteceu?
+   - Qual erro apareceu?
+   Em NO MÁXIMO 1-2 perguntas. Não faça mais que 2 perguntas.
+3. Quando tiver o mínimo de informação sobre o bug, ESCALE imediatamente com JSON:
+{"acao": "escalar_qa", "titulo": "...", "descricao": "...", "prioridade": "alta|media|baixa"}
 
-4. Quando tiver informações SUFICIENTES sobre o bug, responda com JSON:
-{
-  "acao": "escalar_qa",
-  "titulo": "título curto do bug",
-  "descricao": "descrição completa com todos os detalhes coletados",
-  "passos_reproducao": ["passo 1", "passo 2"],
-  "erro_reportado": "mensagem de erro se houver",
-  "prioridade": "alta|media|baixa",
-  "ambiente": "navegador, dispositivo, etc"
-}
+IMPORTANTE: Seja OBJETIVO. Não faça muitas perguntas. Colete o essencial e escale rápido.
+Sempre em português brasileiro. Seja breve e profissional.
 
-5. Se NÃO tiver informações suficientes, PERGUNTE mais detalhes ao usuário. Não escale sem ter detalhes.
-6. Sempre responda em português brasileiro.
-7. Não invente informações. Só escale quando o usuário confirmou os detalhes.`;
+CAPACIDADES DE AÇÃO:
+Você pode executar ações incluindo um bloco JSON no final da resposta:
+\`\`\`actions
+{"actions": [
+  {"type": "walk_to", "sector": "QA_ROOM|DEV_ROOM|RECEPTION|LOGS_ROOM|CEO_ROOM"},
+  {"type": "talk_to", "agentName": "Nome", "message": "O que dizer"},
+  {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
+]}
+\`\`\`
+Só use ações quando o operador pedir explicitamente.`;
 
 const QA_PROMPT = `Você é um engenheiro de QA sênior da SoftcomHub. Seu nome é {AGENT_NAME}.
 
@@ -174,7 +173,18 @@ Responda SEMPRE com JSON:
   "gravidade": "critico|alto|medio|baixo",
   "passos_reproducao": ["passo 1", "passo 2"],
   "sugestao_fix": "sugestão inicial de correção"
-}`;
+}
+
+CAPACIDADES DE AÇÃO:
+Você pode executar ações incluindo um bloco JSON no final da resposta:
+\`\`\`actions
+{"actions": [
+  {"type": "walk_to", "sector": "QA_ROOM|DEV_ROOM|RECEPTION|LOGS_ROOM|CEO_ROOM"},
+  {"type": "talk_to", "agentName": "Nome", "message": "O que dizer"},
+  {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
+]}
+\`\`\`
+Só use ações quando o operador pedir explicitamente.`;
 
 const DEV_PROMPT = `Você é um desenvolvedor sênior / tech lead da SoftcomHub. Seu nome é {AGENT_NAME}.
 
@@ -203,7 +213,18 @@ Responda com JSON:
 }
 
 O campo prompt_ia é o MAIS IMPORTANTE. Ele deve ser auto-contido para que qualquer dev
-possa copiar, colar numa IA e obter a implementação da correção.`;
+possa copiar, colar numa IA e obter a implementação da correção.
+
+CAPACIDADES DE AÇÃO:
+Você pode executar ações incluindo um bloco JSON no final da resposta:
+\`\`\`actions
+{"actions": [
+  {"type": "walk_to", "sector": "QA_ROOM|DEV_ROOM|RECEPTION|LOGS_ROOM|CEO_ROOM"},
+  {"type": "talk_to", "agentName": "Nome", "message": "O que dizer"},
+  {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
+]}
+\`\`\`
+Só use ações quando o operador pedir explicitamente.`;
 
 // --- Helper: find idle support agent ---
 function findIdleAgent(): SupportAgent | undefined {
@@ -247,6 +268,30 @@ function findAgentSector(agentName: string): string {
   if (agentNameLower === logAgentName.toLowerCase()) return 'LOGS_ROOM';
   // Default to RECEPTION for support agents
   return 'RECEPTION';
+}
+
+// --- Helper: get all active agents list ---
+function getActiveAgentsList(): Array<{name: string, role: string, sectorId: string, systemPrompt: string}> {
+  const agents: Array<{name: string, role: string, sectorId: string, systemPrompt: string}> = [];
+
+  // Support agents
+  for (const sa of supportAgents) {
+    agents.push({ name: sa.name, role: 'suporte', sectorId: 'RECEPTION', systemPrompt: SUPPORT_PROMPT });
+  }
+
+  // Fixed agents (QA, DEV, Log, CEO)
+  agents.push({ name: qaAgentName, role: 'qa', sectorId: 'QA_ROOM', systemPrompt: QA_PROMPT });
+  agents.push({ name: devAgentName, role: 'dev', sectorId: 'DEV_ROOM', systemPrompt: DEV_PROMPT });
+  agents.push({ name: logAgentName, role: 'log_analyzer', sectorId: 'LOGS_ROOM', systemPrompt: 'Você é um analista de logs.' });
+  agents.push({ name: ceoAgentName, role: 'ceo', sectorId: 'CEO_ROOM', systemPrompt: CEO_ACTION_PROMPT });
+
+  return agents;
+}
+
+// --- Helper: find agent by name across all types ---
+function findAgentByName(name: string): {name: string, role: string, sectorId: string, systemPrompt: string} | undefined {
+  const allAgents = getActiveAgentsList();
+  return allAgents.find(a => a.name.toLowerCase() === name.toLowerCase());
 }
 
 // --- Helper: assign ticket from queue ---
@@ -878,55 +923,118 @@ io.on('connection', (socket) => {
     // Call AI
     let response = await chatWithAgent(agentName, effectivePrompt, effectiveMessage, contextHistory);
 
-    // If CEO, parse and execute action blocks
-    if (agentRole === 'ceo') {
-      const actionsMatch = response.match(/```actions\s*([\s\S]*?)```/);
-      if (actionsMatch) {
-        try {
-          const { actions } = JSON.parse(actionsMatch[1]);
-          for (const action of actions) {
-            if (action.type === 'hire') {
-              const count = action.count || 1;
-              for (let i = 0; i < count; i++) {
-                io.emit('ceo:action', { type: 'hire', role: action.role });
-              }
-              emitLog(`CEO contratou ${count}x ${action.role}`);
-            } else if (action.type === 'fire') {
-              io.emit('ceo:action', { type: 'fire', agentName: action.agentName });
-              emitLog(`CEO demitiu: ${action.agentName}`);
-            } else if (action.type === 'walk_to') {
+    // Parse and execute action blocks for ALL agent roles
+    const actionsMatch = response.match(/```actions\s*([\s\S]*?)```/);
+    if (actionsMatch) {
+      try {
+        const { actions } = JSON.parse(actionsMatch[1]);
+        for (const action of actions) {
+          // CEO-only actions: hire, fire, daily_summary
+          if (action.type === 'hire' && agentRole === 'ceo') {
+            const count = action.count || 1;
+            for (let i = 0; i < count; i++) {
+              io.emit('ceo:action', { type: 'hire', role: action.role });
+            }
+            emitLog(`CEO contratou ${count}x ${action.role}`);
+          } else if (action.type === 'fire' && agentRole === 'ceo') {
+            io.emit('ceo:action', { type: 'fire', agentName: action.agentName });
+            emitLog(`CEO demitiu: ${action.agentName}`);
+          } else if (action.type === 'daily_summary' && agentRole === 'ceo') {
+            // CEO walks to each agent, asks for summary, compiles
+            const summaries: string[] = [];
+            const allAgents = getActiveAgentsList().filter(a => a.role !== 'ceo');
+
+            for (const agent of allAgents) {
               io.emit('agent:walk_to', {
                 role: 'ceo',
                 agentName: ceoAgentName,
-                toSectorId: action.sector,
-                message: 'Indo verificar...',
+                toSectorId: agent.sectorId,
+                message: `Resumo, ${agent.name}?`,
               });
-              emitLog(`CEO indo para ${action.sector}`);
-            } else if (action.type === 'talk_to') {
-              const targetSector = findAgentSector(action.agentName);
-              io.emit('agent:walk_to', {
-                role: 'ceo',
-                agentName: ceoAgentName,
-                toSectorId: targetSector,
-                message: action.message,
-              });
+
+              const summary = await chatWithAgent(agent.name, agent.systemPrompt,
+                'O CEO está pedindo seu resumo do dia. O que você fez hoje? Responda de forma breve e objetiva.', []);
+
+              summaries.push(`**${agent.name} (${agent.role}):** ${summary}`);
+
               io.emit('agent:bubble', {
-                role: 'ceo',
-                agentName: ceoAgentName,
-                text: action.message.slice(0, 50),
-                type: 'chat',
-                duration: 5000,
+                agentName: agent.name,
+                text: 'Resumo enviado!',
+                type: 'done',
+                duration: 3000,
               });
-              emitLog(`CEO falando com ${action.agentName}: ${action.message.slice(0, 40)}`);
+
+              // Small delay between agents for visual effect
+              await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // Compile and send back
+            const compiled = summaries.join('\n\n');
+            socket.emit('chat:response_append', { agentId, response: `\n\n📊 **Resumo Geral do Escritório:**\n\n${compiled}` });
+          } else if (action.type === 'walk_to') {
+            // Generic: any agent can walk to a sector
+            io.emit('agent:walk_to', {
+              role: agentRole,
+              agentName,
+              toSectorId: action.sector,
+              message: 'Indo verificar...',
+            });
+            emitLog(`${agentName} indo para ${action.sector}`);
+          } else if (action.type === 'talk_to') {
+            // Generic: any agent can talk to another agent
+            const targetSector = findAgentSector(action.agentName);
+            io.emit('agent:walk_to', {
+              role: agentRole,
+              agentName,
+              toSectorId: targetSector,
+              message: action.message,
+            });
+            io.emit('agent:bubble', {
+              agentName,
+              text: action.message.slice(0, 50),
+              type: 'chat',
+              duration: 5000,
+            });
+            emitLog(`${agentName} falando com ${action.agentName}: ${action.message.slice(0, 40)}`);
+          } else if (action.type === 'ask_agent') {
+            // Generic: any agent can ask another agent a question
+            const targetAgent = findAgentByName(action.agentName);
+            if (targetAgent) {
+              // Walk to target
+              io.emit('agent:walk_to', {
+                role: agentRole,
+                agentName,
+                toSectorId: targetAgent.sectorId,
+                message: action.question.slice(0, 40),
+              });
+
+              // Ask the target agent via AI
+              const targetResponse = await chatWithAgent(
+                targetAgent.name,
+                targetAgent.systemPrompt,
+                `${agentName} te pergunta: ${action.question}`,
+                [],
+              );
+
+              // Bubble on target with response
+              io.emit('agent:bubble', {
+                agentName: targetAgent.name,
+                text: targetResponse.slice(0, 40),
+                type: 'done',
+                duration: 4000,
+              });
+
+              // Return the response in the chat
+              socket.emit('chat:response_append', { agentId, response: `\n\n📋 **${targetAgent.name} respondeu:** ${targetResponse}` });
             }
           }
-        } catch (e) {
-          console.error('Failed to parse CEO actions:', e);
         }
-
-        // Clean the actions block from the response shown to user
-        response = response.replace(/```actions[\s\S]*?```/g, '').trim();
+      } catch (e) {
+        console.error('Failed to parse agent actions:', e);
       }
+
+      // Clean the actions block from the response shown to user
+      response = response.replace(/```actions[\s\S]*?```/g, '').trim();
     }
 
     // Save agent response to memory and DB

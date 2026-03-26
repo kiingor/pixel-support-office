@@ -112,6 +112,21 @@ export function useWebSocket() {
       useOfficeStore.getState().onChatResponse(data.agentId, data.response);
     });
 
+    // Chat response append: append text to the last agent message
+    socket.on('chat:response_append', (data: { agentId: string; response: string }) => {
+      const store = useOfficeStore.getState();
+      const histories = new Map(store.chatHistories);
+      const history = histories.get(data.agentId) || [];
+      if (history.length > 0) {
+        const lastMsg = history[history.length - 1];
+        if (lastMsg.from === 'agent') {
+          lastMsg.text += data.response;
+          histories.set(data.agentId, [...history]);
+          useOfficeStore.setState({ chatHistories: histories });
+        }
+      }
+    });
+
     // Agent walk-to event: make an agent walk to a target sector with a speech bubble
     socket.on('agent:walk_to', (data: { role?: string; agentName?: string; toSectorId: string; message?: string }) => {
       const store = useOfficeStore.getState();
