@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
+import { addBubble } from '../engine/characters';
+import type { SectorId } from '../types/agents';
 
 // In production, connect to same host. In dev, use localhost:3001
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
@@ -100,6 +102,65 @@ export function useWebSocket() {
     // Chat response from backend AI
     socket.on('chat:response', (data) => {
       useOfficeStore.getState().onChatResponse(data.agentId, data.response);
+    });
+
+    // Agent walk-to event: make an agent walk to a target sector with a speech bubble
+    socket.on('agent:walk_to', (data: { fromRole: string; toSectorId: string; message: string }) => {
+      const store = useOfficeStore.getState();
+      const os = store.officeState;
+      if (!os) return;
+
+      // Find the agent by role
+      let agent = null;
+      for (const ch of os.characters.values()) {
+        if (ch.role === data.fromRole) {
+          agent = ch;
+          break;
+        }
+      }
+      if (!agent) return;
+
+      os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
+      if (data.message) {
+        addBubble(agent, data.message, 'handoff', 4);
+      }
+      store.addLogEntry(`${agent.name} caminhando para ${data.toSectorId}`);
+    });
+
+    // Agent bubble event: show a speech bubble on an agent
+    socket.on('agent:bubble', (data: { role: string; text: string; type: string; duration?: number }) => {
+      const os = useOfficeStore.getState().officeState;
+      if (!os) return;
+
+      for (const ch of os.characters.values()) {
+        if (ch.role === data.role) {
+          const bubbleType = (data.type || 'processing') as 'processing' | 'done' | 'handoff' | 'alert' | 'chat';
+          addBubble(ch, data.text, bubbleType, data.duration || 4);
+          break;
+        }
+      }
+    });
+
+    // Queue updated event: update queue count in store
+    socket.on('queue:updated', (data: { queueSize: number }) => {
+      useOfficeStore.getState().setQueueSize(data.queueSize);
+    });
+
+    // Ticket assigned event: show which agent got the ticket
+    socket.on('ticket:assigned', (data: { agentName: string; author: string }) => {
+      const store = useOfficeStore.getState();
+      store.addLogEntry(`${data.agentName} atendendo ticket de ${data.author}`);
+
+      // Show a bubble on the agent
+      const os = store.officeState;
+      if (os) {
+        for (const ch of os.characters.values()) {
+          if (ch.name === data.agentName) {
+            addBubble(ch, data.author, 'processing', 5);
+            break;
+          }
+        }
+      }
     });
 
     return () => { socket.disconnect(); };

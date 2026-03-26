@@ -26,6 +26,7 @@ export function ControlPanel() {
   const {
     agents, selectedAgentId, selectAgent, openChat,
     logEntries, tickets, cases, chatAgentId, resolveCase,
+    queueSize,
   } = useOfficeStore();
 
   // If chat is open, show the chat panel instead
@@ -103,6 +104,14 @@ export function ControlPanel() {
         )}
         {activeTab === 'Fila' && (
           <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 'bold' }}>Fila de Atendimento</span>
+              {queueSize > 0 && (
+                <span style={{ background: '#e74c3c', color: 'white', borderRadius: 10, padding: '2px 8px', fontSize: 11 }}>
+                  {queueSize} aguardando
+                </span>
+              )}
+            </div>
             {tickets.length === 0 && <div style={{ color: '#666', fontSize: 13 }}>Nenhum ticket na fila</div>}
             {tickets.map(t => (
               <div key={t.id} style={{ padding: '6px 8px', marginBottom: 4, background: '#0d1b3e', borderRadius: 4, fontSize: 12 }}>

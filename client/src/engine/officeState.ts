@@ -23,6 +23,7 @@ export class OfficeState {
   seats: Map<string, Seat>;
   blockedTiles: Set<string>;
   tasks: Map<string, AgentTask> = new Map();
+  queueSize = 0;
   private listeners: OfficeEventCallback[] = [];
   private pendingArrivals: Map<string, { targetSeat: string; callback?: () => void }> = new Map();
 
@@ -216,6 +217,7 @@ export class OfficeState {
       this.zoom,
       this.panX,
       this.panY,
+      this.queueSize,
     );
   }
 

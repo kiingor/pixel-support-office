@@ -23,6 +23,7 @@ export function renderFrame(
   zoom: number,
   panX: number,
   panY: number,
+  queueSize = 0,
 ): void {
   ctx.clearRect(0, 0, canvasW, canvasH);
 
@@ -87,6 +88,11 @@ export function renderFrame(
 
   // Render sector labels
   renderSectorLabels(ctx, zoom);
+
+  // Render queue alert badge
+  if (queueSize > 0) {
+    renderQueueAlert(ctx, zoom, queueSize);
+  }
 
   ctx.restore();
 }
@@ -262,6 +268,44 @@ function renderSectorLabels(
       ly,
     );
   }
+
+  ctx.restore();
+}
+
+function renderQueueAlert(
+  ctx: CanvasRenderingContext2D,
+  zoom: number,
+  queueSize: number,
+): void {
+  const sector = SECTORS.RECEPTION;
+  const bounds = sector.bounds;
+
+  // Position at top-right of the RECEPTION sector
+  const badgeX = bounds.colEnd * TILE_SIZE * zoom - 4 * zoom;
+  const badgeY = (bounds.rowStart * TILE_SIZE + 10) * zoom;
+
+  // Pulsate effect using sin wave
+  const pulse = 1 + 0.08 * Math.sin(performance.now() / 300);
+  const radius = 8 * zoom * pulse;
+
+  ctx.save();
+
+  // Red circle badge
+  ctx.beginPath();
+  ctx.arc(badgeX, badgeY, radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#e74c3c';
+  ctx.fill();
+  ctx.strokeStyle = '#c0392b';
+  ctx.lineWidth = 1.5 * zoom;
+  ctx.stroke();
+
+  // Queue count number
+  const fontSize = Math.max(8, zoom * 5);
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(String(queueSize), badgeX, badgeY);
 
   ctx.restore();
 }

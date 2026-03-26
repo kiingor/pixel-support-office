@@ -49,6 +49,13 @@ interface ContextMenu {
   onDelete: () => void;
 }
 
+interface ActiveConversation {
+  agentName: string;
+  userName: string;
+  lastMessage: string;
+  channelId: string;
+}
+
 interface OfficeStoreState {
   officeState: OfficeState | null;
   socket: Socket | null;
@@ -62,6 +69,8 @@ interface OfficeStoreState {
   agentProfiles: Map<string, AgentProfile>;
   contextMenu: ContextMenu | null;
   chatLoading: boolean;
+  queueSize: number;
+  activeConversations: Map<string, ActiveConversation>;
 
   setOfficeState: (os: OfficeState) => void;
   setSocket: (s: Socket) => void;
@@ -83,6 +92,8 @@ interface OfficeStoreState {
   resolveCase: (casoId: string) => void;
   getAgentProfile: (agentId: string) => AgentProfile | undefined;
   setContextMenu: (menu: ContextMenu | null) => void;
+  setQueueSize: (size: number) => void;
+  updateActiveConversation: (channelId: string, data: ActiveConversation) => void;
 }
 
 let msgCounter = 0;
@@ -100,6 +111,8 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   agentProfiles: new Map(),
   contextMenu: null,
   chatLoading: false,
+  queueSize: 0,
+  activeConversations: new Map(),
 
   setOfficeState: (os) => set({ officeState: os }),
   setSocket: (s) => set({ socket: s }),
@@ -148,6 +161,10 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     if (!os) return;
     const ch = os.addAgent(role);
     if (ch) {
+      const socket = get().socket;
+      if (ch && socket) {
+        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role });
+      }
       get().addLogEntry(`${ch.name} (${role}) contratado(a)!`);
       get().syncAgents();
     } else {
@@ -160,6 +177,10 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     if (!os) return;
     const ch = os.characters.get(id);
     if (!ch) return;
+    const socket = get().socket;
+    if (socket) {
+      socket.emit('agent:fired', { id, role: ch.role, name: ch.name });
+    }
     os.removeAgent(id);
     get().addLogEntry(`${ch.name} (${ch.role}) demitido(a)`);
     const profiles = get().agentProfiles;
@@ -273,4 +294,18 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
 
   getAgentProfile: (agentId) => get().agentProfiles.get(agentId),
   setContextMenu: (menu) => set({ contextMenu: menu }),
+
+  setQueueSize: (size) => {
+    set({ queueSize: size });
+    const os = get().officeState;
+    if (os) {
+      os.queueSize = size;
+    }
+  },
+
+  updateActiveConversation: (channelId, data) => {
+    const conversations = new Map(get().activeConversations);
+    conversations.set(channelId, data);
+    set({ activeConversations: conversations });
+  },
 }));

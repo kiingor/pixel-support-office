@@ -19,23 +19,34 @@ dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
 
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
+app.use(cors({ origin: true }));
 app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
-  cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173' },
+  cors: { origin: true },
 });
 
 // --- State ---
 let bugCounter = 0;
 let caseCounter = 0;
 
+// Multi-agent support tracking
+interface SupportAgent {
+  id: string;
+  name: string;
+  busy: boolean;
+  currentChannelId: string | null;
+}
+const supportAgents: SupportAgent[] = [];
+const ticketQueue: Array<{ author: string; content: string; channelId: string }> = [];
+
 // Active tickets per Discord channel
 const activeChannels = new Map<string, {
   ticketId: string;
   status: 'collecting' | 'processing' | 'qa' | 'dev' | 'done';
   agentName: string;
+  agentId: string;
   agentPrompt: string;
   bugReport?: string;
 }>();
@@ -140,6 +151,34 @@ Responda com JSON:
 O campo prompt_ia é o MAIS IMPORTANTE. Ele deve ser auto-contido para que qualquer dev
 possa copiar, colar numa IA e obter a implementação da correção.`;
 
+// --- Helper: find idle support agent ---
+function findIdleAgent(): SupportAgent | undefined {
+  return supportAgents.find(a => !a.busy);
+}
+
+// --- Helper: assign ticket from queue ---
+function assignFromQueue(agent: SupportAgent) {
+  if (ticketQueue.length === 0) return;
+  const next = ticketQueue.shift()!;
+  io.emit('queue:updated', { size: ticketQueue.length });
+  emitLog(`Ticket da fila atribuído a ${agent.name} (${ticketQueue.length} restantes na fila)`);
+
+  // Process it
+  handleDiscordMessage(next.author, next.content, next.channelId, agent);
+}
+
+// --- Helper: free agent after ticket completion ---
+function freeAgent(agentId: string) {
+  const agent = supportAgents.find(a => a.id === agentId);
+  if (agent) {
+    agent.busy = false;
+    agent.currentChannelId = null;
+    io.emit('agent:status', { agentId: agent.id, name: agent.name, busy: false });
+    // Check queue for pending tickets
+    assignFromQueue(agent);
+  }
+}
+
 // --- REST API ---
 
 app.get('/api/health', (_, res) => {
@@ -190,6 +229,9 @@ app.post('/api/cases/:casoId/resolve', async (req, res) => {
           `✅ **Caso ${casoId} Resolvido!**\n\nO problema "${theCase.titulo}" foi analisado e corrigido pela nossa equipe de desenvolvimento. Se precisar de mais alguma coisa, é só nos chamar!`
         );
         info.status = 'done';
+
+        // Free the support agent that was handling this channel
+        freeAgent(info.agentId);
         break;
       }
     }
@@ -228,10 +270,15 @@ app.get('/api/conversations/:channelId', async (req, res) => {
   res.json(history);
 });
 
+// Get support agents status
+app.get('/api/agents/support', (_, res) => {
+  res.json({ agents: supportAgents, queueSize: ticketQueue.length });
+});
+
 // --- DISCORD MESSAGE HANDLER ---
 // This is the core: every Discord message goes through here
 
-async function handleDiscordMessage(author: string, content: string, channelId: string) {
+async function handleDiscordMessage(author: string, content: string, channelId: string, assignedAgent?: SupportAgent) {
   // Save user message to conversations
   await dbSaveMessage({
     channel_id: channelId,
@@ -247,9 +294,25 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
 
   if (active && active.status === 'collecting') {
     // Continue collecting info for existing ticket
-    await handleSupportMessage(channelId, author, content, active.ticketId);
+    await handleSupportMessage(channelId, author, content, active.ticketId, active.agentId);
   } else if (!active) {
-    // New conversation - create ticket
+    // New conversation - find or use assigned agent
+    let agent = assignedAgent || findIdleAgent();
+
+    if (!agent) {
+      // No available agent - queue the ticket
+      ticketQueue.push({ author, content, channelId });
+      io.emit('queue:updated', { size: ticketQueue.length });
+      emitLog(`Ticket de ${author} adicionado à fila (${ticketQueue.length} na fila). Nenhum agente disponível.`);
+      return;
+    }
+
+    // Mark agent as busy
+    agent.busy = true;
+    agent.currentChannelId = channelId;
+    io.emit('agent:status', { agentId: agent.id, name: agent.name, busy: true, channelId });
+
+    // Create ticket
     const ticket = await dbCreateTicket({
       type: 'suporte',
       source: 'discord',
@@ -260,7 +323,7 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
 
     if (ticket) {
       io.emit('ticket:new', ticket);
-      await handleSupportMessage(channelId, author, content, ticket.id);
+      await handleSupportMessage(channelId, author, content, ticket.id, agent.id);
     }
   }
   // If status is processing/qa/dev, ignore (agent is working)
@@ -268,7 +331,7 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
 
 // --- SUPPORT AGENT ---
 
-async function handleSupportMessage(channelId: string, author: string, message: string, ticketId: string) {
+async function handleSupportMessage(channelId: string, author: string, message: string, ticketId: string, agentId?: string) {
   // Get conversation history for context
   const history = await dbGetConversation(channelId, 15);
   const conversationContext = history.map(m => ({
@@ -276,20 +339,27 @@ async function handleSupportMessage(channelId: string, author: string, message: 
     content: `${m.author_name}: ${m.message}`,
   }));
 
+  // Determine which agent name to use for this channel
+  const existingChannel = activeChannels.get(channelId);
+  const resolvedAgentId = agentId || existingChannel?.agentId || '';
+  const agent = supportAgents.find(a => a.id === resolvedAgentId);
+  const agentName = agent?.name || existingChannel?.agentName || supportAgentName;
+
   // Set channel as active
   activeChannels.set(channelId, {
     ticketId,
     status: 'collecting',
-    agentName: supportAgentName,
+    agentName,
+    agentId: resolvedAgentId,
     agentPrompt: SUPPORT_PROMPT,
   });
 
-  emitLog(`${supportAgentName} analisando mensagem de ${author}...`);
-  io.emit('agent:working', { role: 'suporte', agentName: supportAgentName, action: 'analyzing' });
+  emitLog(`${agentName} analisando mensagem de ${author}...`);
+  io.emit('agent:working', { role: 'suporte', agentName, agentId: resolvedAgentId, action: 'analyzing' });
 
   // Call AI with full conversation context
   const aiResponse = await chatWithAgent(
-    supportAgentName,
+    agentName,
     SUPPORT_PROMPT,
     message,
     conversationContext,
@@ -306,15 +376,15 @@ async function handleSupportMessage(channelId: string, author: string, message: 
       await dbSaveMessage({
         channel_id: channelId,
         ticket_id: ticketId,
-        agent_id: 'support',
+        agent_id: resolvedAgentId || 'support',
         role: 'agent',
-        author_name: supportAgentName,
+        author_name: agentName,
         message: `Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`,
       });
 
       // Send to Discord
       await sendDiscordMessage(channelId,
-        `🤖 **${supportAgentName}:** Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`
+        `🤖 **${agentName}:** Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`
       );
 
       // Update ticket
@@ -324,54 +394,72 @@ async function handleSupportMessage(channelId: string, author: string, message: 
         result: bugData,
       });
 
-      io.emit('ticket:escalated', { ticketId, bugId: `BUG-${++bugCounter}`, classification: bugData });
-      emitLog(`${supportAgentName}: Bug detectado e escalado para QA`);
+      const bugId = `BUG-${++bugCounter}`;
+      io.emit('ticket:escalated', { ticketId, bugId, classification: bugData });
+      emitLog(`${agentName}: Bug detectado e escalado para QA`);
+
+      // Emit visual walk event: agent walks from support to QA sector
+      io.emit('agent:walk_to', {
+        agentId: resolvedAgentId,
+        fromSector: 'support',
+        toSector: 'qa',
+        message: `Escalando ${bugId} para QA`,
+      });
+      io.emit('agent:bubble', {
+        agentId: resolvedAgentId,
+        text: `Escalando para QA...`,
+        type: 'info',
+        duration: 3000,
+      });
 
       // Update channel status
       const channelInfo = activeChannels.get(channelId)!;
       channelInfo.status = 'qa';
 
       // Trigger QA pipeline
-      await processQA(channelId, ticketId, bugData, `BUG-${bugCounter}`);
+      await processQA(channelId, ticketId, bugData, bugId, resolvedAgentId);
 
     } catch (e) {
       console.error('Failed to parse escalation JSON:', e);
       // Treat as normal response
-      await sendSupportResponse(channelId, ticketId, aiResponse);
+      await sendSupportResponse(channelId, ticketId, aiResponse, agentName, resolvedAgentId);
     }
   } else {
     // Normal response (question answered or asking for more info)
-    await sendSupportResponse(channelId, ticketId, aiResponse);
+    await sendSupportResponse(channelId, ticketId, aiResponse, agentName, resolvedAgentId);
 
     // Check if it looks like a final answer (not a follow-up question)
     if (!aiResponse.includes('?') || aiResponse.toLowerCase().includes('espero ter ajudado')) {
       await dbUpdateTicket(ticketId, { status: 'done', classification: 'duvida', completed_at: new Date().toISOString() });
       activeChannels.delete(channelId);
       io.emit('ticket:completed', { ticketId, classification: 'duvida' });
-      emitLog(`${supportAgentName}: Respondeu dúvida de ${author}`);
+      emitLog(`${agentName}: Respondeu dúvida de ${author}`);
+
+      // Free the agent
+      freeAgent(resolvedAgentId);
     }
   }
 }
 
-async function sendSupportResponse(channelId: string, ticketId: string, response: string) {
+async function sendSupportResponse(channelId: string, ticketId: string, response: string, agentName: string, agentId: string) {
   // Clean any JSON from the response for Discord
   const cleanResponse = response.replace(/```json[\s\S]*?```/g, '').replace(/\{[\s\S]*"acao"[\s\S]*\}/g, '').trim();
 
   await dbSaveMessage({
     channel_id: channelId,
     ticket_id: ticketId,
-    agent_id: 'support',
+    agent_id: agentId || 'support',
     role: 'agent',
-    author_name: supportAgentName,
+    author_name: agentName,
     message: cleanResponse,
   });
 
-  await sendDiscordMessage(channelId, `🤖 **${supportAgentName}:** ${cleanResponse}`);
+  await sendDiscordMessage(channelId, `🤖 **${agentName}:** ${cleanResponse}`);
 }
 
 // --- QA AGENT ---
 
-async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string) {
+async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string, supportAgentId: string) {
   emitLog(`${qaAgentName} analisando ${bugId}...`);
   io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: 'analyzing' });
 
@@ -409,17 +497,31 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
   io.emit('qa:completed', { bugId, report: qaReport });
   emitLog(`${qaAgentName}: Análise concluída - ${qaReport.gravidade}`);
 
+  // Emit visual walk event: QA walks to DEV sector
+  io.emit('agent:walk_to', {
+    agentId: 'qa',
+    fromSector: 'qa',
+    toSector: 'dev',
+    message: `Encaminhando ${bugId} para DEV`,
+  });
+  io.emit('agent:bubble', {
+    agentId: 'qa',
+    text: `Encaminhando para DEV...`,
+    type: 'info',
+    duration: 3000,
+  });
+
   // Update channel status
   const channelInfo = activeChannels.get(channelId);
   if (channelInfo) channelInfo.status = 'dev';
 
   // Trigger DEV pipeline
-  await processDev(channelId, ticketId, qaReport, bugId);
+  await processDev(channelId, ticketId, qaReport, bugId, supportAgentId);
 }
 
 // --- DEV AGENT ---
 
-async function processDev(channelId: string, ticketId: string, qaReport: any, bugId: string) {
+async function processDev(channelId: string, ticketId: string, qaReport: any, bugId: string, supportAgentId: string) {
   const caseId = `CASE-${++caseCounter}`;
   emitLog(`${devAgentName} gerando caso ${caseId}...`);
   io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: 'investigating' });
@@ -465,6 +567,17 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
 
   io.emit('case:opened', devCase);
   emitLog(`${devAgentName}: Caso ${caseId} aberto - ${devCase.titulo}`);
+
+  // Emit visual event: DEV agent bubble
+  io.emit('agent:bubble', {
+    agentId: 'dev',
+    text: `Caso ${caseId} criado!`,
+    type: 'success',
+    duration: 4000,
+  });
+
+  // Free the support agent that originally handled this ticket
+  freeAgent(supportAgentId);
 }
 
 // --- LOG ANALYZER ---
@@ -482,6 +595,62 @@ async function runLogAnalysis() {
 // --- Socket.io ---
 io.on('connection', (socket) => {
   console.log('[Socket] Client connected:', socket.id);
+
+  // Send current agent roster and queue state on connect
+  socket.emit('agents:list', supportAgents);
+  socket.emit('queue:updated', { size: ticketQueue.length });
+
+  // --- Multi-agent registration ---
+  socket.on('agent:register', (data: { id: string; name: string }) => {
+    const existing = supportAgents.find(a => a.id === data.id);
+    if (existing) {
+      existing.name = data.name;
+      emitLog(`Agente de suporte atualizado: ${data.name}`);
+    } else {
+      supportAgents.push({
+        id: data.id,
+        name: data.name,
+        busy: false,
+        currentChannelId: null,
+      });
+      emitLog(`Agente de suporte registrado: ${data.name}`);
+    }
+    io.emit('agents:list', supportAgents);
+  });
+
+  socket.on('agent:unregister', (data: { id: string }) => {
+    const idx = supportAgents.findIndex(a => a.id === data.id);
+    if (idx !== -1) {
+      const removed = supportAgents.splice(idx, 1)[0];
+      emitLog(`Agente de suporte removido: ${removed.name}`);
+      io.emit('agents:list', supportAgents);
+    }
+  });
+
+  // Agent hired: register + auto-assign from queue
+  socket.on('agent:hired', (data: { id: string; name: string }) => {
+    let agent = supportAgents.find(a => a.id === data.id);
+    if (!agent) {
+      agent = {
+        id: data.id,
+        name: data.name,
+        busy: false,
+        currentChannelId: null,
+      };
+      supportAgents.push(agent);
+      emitLog(`Novo agente contratado: ${data.name}`);
+    } else {
+      agent.name = data.name;
+      agent.busy = false;
+      agent.currentChannelId = null;
+    }
+    io.emit('agents:list', supportAgents);
+
+    // Auto-assign from queue if there are pending tickets
+    if (ticketQueue.length > 0 && !agent.busy) {
+      assignFromQueue(agent);
+    }
+  });
 
   // Chat message from frontend (chat with any agent via AI)
   socket.on('chat:message', async (data) => {
@@ -527,6 +696,11 @@ io.on('connection', (socket) => {
     else if (role === 'dev') devAgentName = name;
     else if (role === 'log_analyzer') logAgentName = name;
     else if (role === 'ceo') ceoAgentName = name;
+
+    // Also update in supportAgents array if it's a support agent
+    const supportAgent = supportAgents.find(a => a.id === agentId);
+    if (supportAgent) supportAgent.name = name;
+
     io.emit('agent:renamed', { agentId, name });
   });
 
