@@ -158,7 +158,7 @@ export class OfficeState {
     return success;
   }
 
-  /** Send an agent to sit in the meeting room. */
+  /** Send an agent to sit in the meeting room (2-step: door then seat). */
   sendAgentToMeetingRoom(agentId: string): boolean {
     const ch = this.characters.get(agentId);
     if (!ch) return false;
@@ -168,18 +168,18 @@ export class OfficeState {
     let targetSeat: { col: number; row: number; facingDir: number } | null = null;
 
     for (const seatPos of meetingSector.seatPositions) {
-      // Check if any other character is already targeting or sitting at this seat
       let occupied = false;
-      for (const other of this.characters.values()) {
-        if (other.id !== ch.id && other.col === seatPos.col && other.row === seatPos.row) {
+      // Check if claimed by a pending arrival
+      for (const arrival of this.pendingArrivals.values()) {
+        if (arrival.targetSeat === `meeting_${seatPos.col}_${seatPos.row}`) {
           occupied = true;
           break;
         }
       }
-      // Also check meeting seats already claimed by pending walkers
+      // Check if another character is already there
       if (!occupied) {
-        for (const arrival of this.pendingArrivals.values()) {
-          if (arrival.targetSeat === `meeting_${seatPos.col}_${seatPos.row}`) {
+        for (const other of this.characters.values()) {
+          if (other.id !== ch.id && other.col === seatPos.col && other.row === seatPos.row) {
             occupied = true;
             break;
           }
@@ -191,33 +191,55 @@ export class OfficeState {
       }
     }
 
-    if (!targetSeat) {
-      // No seats available, walk to door instead
-      return this.sendAgentToSector(agentId, 'MEETING_ROOM');
-    }
-
+    // Step 1: Walk to the meeting room door (this always works)
+    const door = meetingSector.doorPosition;
     ch.targetSectorId = 'MEETING_ROOM';
-    ch.state = CharacterState.WALK;
 
-    const success = sendCharacterTo(ch, targetSeat.col, targetSeat.row, this.tiles, this.blockedTiles);
+    const success = sendCharacterTo(ch, door.col, door.row, this.tiles, this.blockedTiles);
+    if (!success) return false;
 
-    if (success) {
-      const seat = targetSeat;
-      this.pendingArrivals.set(ch.id, {
-        targetSeat: `meeting_${seat.col}_${seat.row}`,
-        callback: () => {
+    const seat = targetSeat;
+    const seatKey = seat ? `meeting_${seat.col}_${seat.row}` : '';
+
+    this.pendingArrivals.set(ch.id, {
+      targetSeat: seatKey,
+      callback: () => {
+        if (seat) {
+          // Step 2: From the door, walk to the seat
+          const seatSuccess = sendCharacterTo(ch, seat.col, seat.row, this.tiles, this.blockedTiles);
+          if (seatSuccess) {
+            this.pendingArrivals.set(ch.id, {
+              targetSeat: seatKey,
+              callback: () => {
+                ch.targetSectorId = null;
+                ch.direction = seat.facingDir;
+                ch.col = seat.col;
+                ch.row = seat.row;
+                ch.pixelX = seat.col * TILE_SIZE;
+                ch.pixelY = seat.row * TILE_SIZE;
+                ch.state = CharacterState.TALK;
+              },
+            });
+          } else {
+            // Can't reach seat, just snap there
+            ch.targetSectorId = null;
+            ch.direction = seat.facingDir;
+            ch.col = seat.col;
+            ch.row = seat.row;
+            ch.pixelX = seat.col * TILE_SIZE;
+            ch.pixelY = seat.row * TILE_SIZE;
+            ch.state = CharacterState.TALK;
+          }
+        } else {
+          // No seat available, stand at door
           ch.targetSectorId = null;
-          ch.direction = seat.facingDir;
-          ch.col = seat.col;
-          ch.row = seat.row;
-          ch.pixelX = seat.col * TILE_SIZE;
-          ch.pixelY = seat.row * TILE_SIZE;
+          ch.direction = 0;
           ch.state = CharacterState.TALK;
-        },
-      });
-    }
+        }
+      },
+    });
 
-    return success;
+    return true;
   }
 
   /** Send an agent to walk to another agent's position. */
