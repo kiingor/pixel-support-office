@@ -105,17 +105,27 @@ export function useWebSocket() {
     });
 
     // Agent walk-to event: make an agent walk to a target sector with a speech bubble
-    socket.on('agent:walk_to', (data: { fromRole: string; toSectorId: string; message: string }) => {
+    socket.on('agent:walk_to', (data: { role?: string; agentName?: string; toSectorId: string; message?: string }) => {
       const store = useOfficeStore.getState();
       const os = store.officeState;
       if (!os) return;
 
-      // Find the agent by role
+      // Find the agent by name first, then by role as fallback
       let agent = null;
-      for (const ch of os.characters.values()) {
-        if (ch.role === data.fromRole) {
-          agent = ch;
-          break;
+      if (data.agentName) {
+        for (const ch of os.characters.values()) {
+          if (ch.name === data.agentName) {
+            agent = ch;
+            break;
+          }
+        }
+      }
+      if (!agent && data.role) {
+        for (const ch of os.characters.values()) {
+          if (ch.role === data.role) {
+            agent = ch;
+            break;
+          }
         }
       }
       if (!agent) return;
@@ -128,15 +138,46 @@ export function useWebSocket() {
     });
 
     // Agent bubble event: show a speech bubble on an agent
-    socket.on('agent:bubble', (data: { role: string; text: string; type: string; duration?: number }) => {
+    socket.on('agent:bubble', (data: { role?: string; agentName?: string; text: string; type?: string; duration?: number }) => {
       const os = useOfficeStore.getState().officeState;
       if (!os) return;
 
-      for (const ch of os.characters.values()) {
-        if (ch.role === data.role) {
-          const bubbleType = (data.type || 'processing') as 'processing' | 'done' | 'handoff' | 'alert' | 'chat';
-          addBubble(ch, data.text, bubbleType, data.duration || 4);
-          break;
+      // Find by name first, then by role as fallback
+      let targetAgent = null;
+      if (data.agentName) {
+        for (const ch of os.characters.values()) {
+          if (ch.name === data.agentName) {
+            targetAgent = ch;
+            break;
+          }
+        }
+      }
+      if (!targetAgent && data.role) {
+        for (const ch of os.characters.values()) {
+          if (ch.role === data.role) {
+            targetAgent = ch;
+            break;
+          }
+        }
+      }
+
+      if (targetAgent) {
+        const bubbleType = (data.type || 'processing') as 'processing' | 'done' | 'handoff' | 'alert' | 'chat';
+        addBubble(targetAgent, data.text || '', bubbleType, (data.duration || 4000) / 1000);
+      }
+    });
+
+    // CEO action events: the CEO AI issued commands
+    socket.on('ceo:action', (data: { type: string; role?: string; agentName?: string }) => {
+      const store = useOfficeStore.getState();
+      if (data.type === 'hire' && data.role) {
+        store.hireAgent(data.role as AgentRole);
+        store.addLogEntry(`CEO contratou: ${data.role}`);
+      } else if (data.type === 'fire' && data.agentName) {
+        const agent = store.agents.find(a => a.name === data.agentName);
+        if (agent) {
+          store.fireAgent(agent.id);
+          store.addLogEntry(`CEO demitiu: ${data.agentName}`);
         }
       }
     });

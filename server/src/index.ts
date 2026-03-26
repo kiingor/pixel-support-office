@@ -70,6 +70,40 @@ let devAgentName = 'Lucas';
 let logAgentName = 'Monitor';
 let ceoAgentName = 'Director Silva';
 
+// CEO action-oriented prompt
+const CEO_ACTION_PROMPT = `Você é o CEO/Diretor do escritório de suporte Pixel Support Office. Seu nome é {AGENT_NAME}.
+
+Você tem PODER TOTAL sobre o escritório. Quando o operador pede algo, você EXECUTA ações reais.
+
+SUAS CAPACIDADES:
+1. CONTRATAR agentes (suporte, qa, dev, log_analyzer)
+2. DEMITIR agentes pelo nome
+3. IR até outros setores
+4. FALAR com outros agentes
+
+ESTADO ATUAL DO ESCRITÓRIO:
+{OFFICE_STATE}
+
+REGRAS IMPORTANTES:
+- Antes de contratar, verifique se há vagas (máx 10 suporte, 5 qa, 5 dev, 5 log)
+- Analise se a contratação faz sentido (ex: fila grande = precisa mais suporte)
+- Converse com o operador, pergunte se necessário
+- Seja estratégico nas decisões
+
+PARA EXECUTAR AÇÕES, inclua este JSON no final da sua resposta:
+\`\`\`actions
+{"actions": [
+  {"type": "hire", "role": "suporte", "count": 3},
+  {"type": "hire", "role": "qa", "count": 1},
+  {"type": "fire", "agentName": "Nome do Agente"},
+  {"type": "walk_to", "sector": "QA_ROOM"},
+  {"type": "talk_to", "agentName": "Carlos", "message": "Mensagem"}
+]}
+\`\`\`
+
+IMPORTANTE: Só inclua o bloco actions quando for EXECUTAR algo. Para conversas normais, responda sem o bloco.
+Sempre responda em português brasileiro. Seja um líder firme mas justo.`;
+
 // Default prompts
 const SUPPORT_PROMPT = `Você é um agente de suporte técnico de nível 1 da SoftcomHub. Seu nome é {AGENT_NAME}.
 Você atende clientes via Discord. Seja empático, profissional e objetivo.
@@ -158,11 +192,50 @@ function findIdleAgent(): SupportAgent | undefined {
   return supportAgents.find(a => !a.busy);
 }
 
+// --- Helper: build office state context for CEO ---
+function buildOfficeContext(): string {
+  const counts: Record<string, { total: number; busy: number }> = {
+    suporte: { total: 0, busy: 0 },
+    qa: { total: 0, busy: 0 },
+    dev: { total: 0, busy: 0 },
+    log_analyzer: { total: 0, busy: 0 },
+  };
+
+  // Count support agents from the supportAgents array
+  for (const a of supportAgents) {
+    counts.suporte.total++;
+    if (a.busy) counts.suporte.busy++;
+  }
+
+  // Note: qa/dev/log counts come from agentConfigs or DB
+  // For now, we track support agents precisely via the supportAgents array.
+
+  const maxSeats: Record<string, number> = { suporte: 10, qa: 5, dev: 5, log_analyzer: 5 };
+
+  return `- Suporte: ${counts.suporte.total} agentes (${counts.suporte.busy} ocupados, ${counts.suporte.total - counts.suporte.busy} ociosos) - Máx: ${maxSeats.suporte}
+- QA: ${counts.qa.total} agentes - Máx: ${maxSeats.qa}
+- DEV: ${counts.dev.total} agentes - Máx: ${maxSeats.dev}
+- Log Analyzer: ${counts.log_analyzer.total} agentes - Máx: ${maxSeats.log_analyzer}
+- Fila de espera: ${ticketQueue.length} tickets
+- Vagas disponíveis Suporte: ${maxSeats.suporte - counts.suporte.total}`;
+}
+
+// --- Helper: find sector for agent by name ---
+function findAgentSector(agentName: string): string {
+  // Map well-known roles to sectors
+  const agentNameLower = agentName.toLowerCase();
+  if (agentNameLower === qaAgentName.toLowerCase()) return 'QA_ROOM';
+  if (agentNameLower === devAgentName.toLowerCase()) return 'DEV_ROOM';
+  if (agentNameLower === logAgentName.toLowerCase()) return 'LOGS_ROOM';
+  // Default to RECEPTION for support agents
+  return 'RECEPTION';
+}
+
 // --- Helper: assign ticket from queue ---
 function assignFromQueue(agent: SupportAgent) {
   if (ticketQueue.length === 0) return;
   const next = ticketQueue.shift()!;
-  io.emit('queue:updated', { size: ticketQueue.length });
+  io.emit('queue:updated', { queueSize: ticketQueue.length });
   emitLog(`Ticket da fila atribuído a ${agent.name} (${ticketQueue.length} restantes na fila)`);
 
   // Process it
@@ -310,7 +383,7 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
     if (!agent) {
       // No available agent - queue the ticket
       ticketQueue.push({ author, content, channelId });
-      io.emit('queue:updated', { size: ticketQueue.length });
+      io.emit('queue:updated', { queueSize: ticketQueue.length });
       emitLog(`Ticket de ${author} adicionado à fila (${ticketQueue.length} na fila). Nenhum agente disponível.`);
       return;
     }
@@ -365,6 +438,15 @@ async function handleSupportMessage(channelId: string, author: string, message: 
   emitLog(`${agentName} analisando mensagem de ${author}...`);
   io.emit('agent:working', { role: 'suporte', agentName, agentId: resolvedAgentId, action: 'analyzing' });
 
+  // Emit bubble showing the agent is processing a Discord message
+  io.emit('agent:bubble', {
+    role: 'suporte',
+    agentName,
+    text: author + ': ' + message.slice(0, 30) + (message.length > 30 ? '...' : ''),
+    type: 'processing',
+    duration: 4000,
+  });
+
   // Call AI with full conversation context
   const aiResponse = await chatWithAgent(
     agentName,
@@ -408,15 +490,16 @@ async function handleSupportMessage(channelId: string, author: string, message: 
 
       // Emit visual walk event: agent walks from support to QA sector
       io.emit('agent:walk_to', {
-        agentId: resolvedAgentId,
-        fromSector: 'support',
-        toSector: 'qa',
+        role: 'suporte',
+        agentName,
+        toSectorId: 'QA_ROOM',
         message: `Escalando ${bugId} para QA`,
       });
       io.emit('agent:bubble', {
-        agentId: resolvedAgentId,
+        role: 'suporte',
+        agentName,
         text: `Escalando para QA...`,
-        type: 'info',
+        type: 'handoff',
         duration: 3000,
       });
 
@@ -435,6 +518,15 @@ async function handleSupportMessage(channelId: string, author: string, message: 
   } else {
     // Normal response (question answered or asking for more info)
     await sendSupportResponse(channelId, ticketId, aiResponse, agentName, resolvedAgentId);
+
+    // Emit bubble showing agent responded
+    io.emit('agent:bubble', {
+      role: 'suporte',
+      agentName,
+      text: 'Respondido! \u2713',
+      type: 'done',
+      duration: 3000,
+    });
 
     // Check if it looks like a final answer (not a follow-up question)
     if (!aiResponse.includes('?') || aiResponse.toLowerCase().includes('espero ter ajudado')) {
@@ -507,15 +599,16 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
 
   // Emit visual walk event: QA walks to DEV sector
   io.emit('agent:walk_to', {
-    agentId: 'qa',
-    fromSector: 'qa',
-    toSector: 'dev',
+    role: 'qa',
+    agentName: qaAgentName,
+    toSectorId: 'DEV_ROOM',
     message: `Encaminhando ${bugId} para DEV`,
   });
   io.emit('agent:bubble', {
-    agentId: 'qa',
+    role: 'qa',
+    agentName: qaAgentName,
     text: `Encaminhando para DEV...`,
-    type: 'info',
+    type: 'handoff',
     duration: 3000,
   });
 
@@ -578,9 +671,10 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
 
   // Emit visual event: DEV agent bubble
   io.emit('agent:bubble', {
-    agentId: 'dev',
+    role: 'dev',
+    agentName: devAgentName,
     text: `Caso ${caseId} criado!`,
-    type: 'success',
+    type: 'done',
     duration: 4000,
   });
 
@@ -718,8 +812,73 @@ io.on('connection', (socket) => {
       content: m.message,
     }));
 
+    // Build the effective system prompt
+    let effectivePrompt = systemPrompt;
+    let effectiveMessage = message;
+
+    if (agentRole === 'ceo') {
+      // Use the CEO action prompt with office state context
+      const officeContext = buildOfficeContext();
+      effectivePrompt = CEO_ACTION_PROMPT
+        .replace('{AGENT_NAME}', agentName)
+        .replace('{OFFICE_STATE}', officeContext);
+      // Append office state context to the user message
+      effectiveMessage = message + '\n\n[Estado do escritório]\n' + officeContext;
+    }
+
     // Call AI
-    const response = await chatWithAgent(agentName, systemPrompt, message, contextHistory);
+    let response = await chatWithAgent(agentName, effectivePrompt, effectiveMessage, contextHistory);
+
+    // If CEO, parse and execute action blocks
+    if (agentRole === 'ceo') {
+      const actionsMatch = response.match(/```actions\s*([\s\S]*?)```/);
+      if (actionsMatch) {
+        try {
+          const { actions } = JSON.parse(actionsMatch[1]);
+          for (const action of actions) {
+            if (action.type === 'hire') {
+              const count = action.count || 1;
+              for (let i = 0; i < count; i++) {
+                io.emit('ceo:action', { type: 'hire', role: action.role });
+              }
+              emitLog(`CEO contratou ${count}x ${action.role}`);
+            } else if (action.type === 'fire') {
+              io.emit('ceo:action', { type: 'fire', agentName: action.agentName });
+              emitLog(`CEO demitiu: ${action.agentName}`);
+            } else if (action.type === 'walk_to') {
+              io.emit('agent:walk_to', {
+                role: 'ceo',
+                agentName: ceoAgentName,
+                toSectorId: action.sector,
+                message: 'Indo verificar...',
+              });
+              emitLog(`CEO indo para ${action.sector}`);
+            } else if (action.type === 'talk_to') {
+              const targetSector = findAgentSector(action.agentName);
+              io.emit('agent:walk_to', {
+                role: 'ceo',
+                agentName: ceoAgentName,
+                toSectorId: targetSector,
+                message: action.message,
+              });
+              io.emit('agent:bubble', {
+                role: 'ceo',
+                agentName: ceoAgentName,
+                text: action.message.slice(0, 50),
+                type: 'chat',
+                duration: 5000,
+              });
+              emitLog(`CEO falando com ${action.agentName}: ${action.message.slice(0, 40)}`);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse CEO actions:', e);
+        }
+
+        // Clean the actions block from the response shown to user
+        response = response.replace(/```actions[\s\S]*?```/g, '').trim();
+      }
+    }
 
     // Save agent response
     await dbSaveMessage({
