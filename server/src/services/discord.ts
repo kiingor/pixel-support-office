@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { Client, GatewayIntentBits, Events, Partials } from 'discord.js';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env' });
@@ -24,6 +24,13 @@ export async function initDiscord(onMessage: MessageHandler): Promise<boolean> {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.DirectMessages,
+      GatewayIntentBits.DirectMessageTyping,
+    ],
+    partials: [
+      Partials.Channel,
+      Partials.Message,
+      Partials.User,
     ],
   });
 
