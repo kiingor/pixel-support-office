@@ -192,14 +192,40 @@ function renderBubbles(
       ctx.drawImage(cached, bx, by);
 
       if (bubble.text) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `${Math.max(8, zoom * 4)}px monospace`;
+        const fontSize = Math.max(8, zoom * 4);
+        ctx.font = `bold ${fontSize}px monospace`;
         ctx.textAlign = 'center';
-        ctx.fillText(
-          bubble.text.slice(0, 20),
-          Math.round(ch.pixelX * zoom + (TILE_SIZE * zoom) / 2),
-          by - 2 * zoom,
-        );
+        const tx = Math.round(ch.pixelX * zoom + (TILE_SIZE * zoom) / 2);
+        const ty = by - 2 * zoom;
+        const text = bubble.text.slice(0, 25);
+
+        // Dark background pill behind text
+        const metrics = ctx.measureText(text);
+        const padX = 4 * zoom;
+        const padY = 2 * zoom;
+        const bgX = tx - metrics.width / 2 - padX;
+        const bgY = ty - fontSize - padY;
+        const bgW = metrics.width + padX * 2;
+        const bgH = fontSize + padY * 2;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        const radius = 3 * zoom;
+        ctx.beginPath();
+        ctx.moveTo(bgX + radius, bgY);
+        ctx.lineTo(bgX + bgW - radius, bgY);
+        ctx.quadraticCurveTo(bgX + bgW, bgY, bgX + bgW, bgY + radius);
+        ctx.lineTo(bgX + bgW, bgY + bgH - radius);
+        ctx.quadraticCurveTo(bgX + bgW, bgY + bgH, bgX + bgW - radius, bgY + bgH);
+        ctx.lineTo(bgX + radius, bgY + bgH);
+        ctx.quadraticCurveTo(bgX, bgY + bgH, bgX, bgY + bgH - radius);
+        ctx.lineTo(bgX, bgY + radius);
+        ctx.quadraticCurveTo(bgX, bgY, bgX + radius, bgY);
+        ctx.closePath();
+        ctx.fill();
+
+        // White text on dark background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, tx, ty);
       }
 
       ctx.restore();
