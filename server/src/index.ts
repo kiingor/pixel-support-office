@@ -16,6 +16,7 @@ import {
 import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent } from './services/aiService.js';
 import { initDiscord, sendDiscordMessage } from './services/discord.js';
 import { syncRepo, getProjectStructure } from './services/codeAnalysis.js';
+import { SOFTCOMHUB_KNOWLEDGE } from './data/softcomhub-knowledge.js';
 
 dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
@@ -149,7 +150,10 @@ Você pode executar ações incluindo um bloco JSON no final da resposta:
   {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
 ]}
 \`\`\`
-Só use ações quando o operador pedir explicitamente.`;
+Só use ações quando o operador pedir explicitamente.
+
+CONHECIMENTO DO SISTEMA SOFTCOMHUB:
+${SOFTCOMHUB_KNOWLEDGE}`;
 
 const QA_PROMPT = `Você é um engenheiro de QA sênior da SoftcomHub. Seu nome é {AGENT_NAME}.
 
@@ -184,7 +188,10 @@ Você pode executar ações incluindo um bloco JSON no final da resposta:
   {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
 ]}
 \`\`\`
-Só use ações quando o operador pedir explicitamente.`;
+Só use ações quando o operador pedir explicitamente.
+
+CONHECIMENTO DO SISTEMA SOFTCOMHUB:
+${SOFTCOMHUB_KNOWLEDGE}`;
 
 const DEV_PROMPT = `Você é um desenvolvedor sênior / tech lead da SoftcomHub. Seu nome é {AGENT_NAME}.
 
@@ -224,7 +231,10 @@ Você pode executar ações incluindo um bloco JSON no final da resposta:
   {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
 ]}
 \`\`\`
-Só use ações quando o operador pedir explicitamente.`;
+Só use ações quando o operador pedir explicitamente.
+
+CONHECIMENTO DO SISTEMA SOFTCOMHUB:
+${SOFTCOMHUB_KNOWLEDGE}`;
 
 // --- Helper: find idle support agent ---
 function findIdleAgent(): SupportAgent | undefined {
