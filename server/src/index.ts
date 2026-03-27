@@ -1342,6 +1342,15 @@ function emitLog(message: string) {
   dbInsertLog({ level: 'info', service: 'orchestrator', message });
 }
 
+// --- Serve frontend static files ---
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const clientDist = join(__dirname, '..', '..', 'client', 'dist');
+app.use(express.static(clientDist));
+app.get('*', (_req, res) => res.sendFile(join(clientDist, 'index.html')));
+
 // --- Start Server ---
 const PORT = parseInt(process.env.PORT || '3001');
 
