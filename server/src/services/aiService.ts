@@ -14,16 +14,12 @@ const client = new Anthropic({
 });
 const MODEL = 'claude-sonnet-4-20250514';
 
-// OpenRouter — thinking layer (chat, bubbles, meetings, personality)
+// Google Gemini — thinking layer (chat, bubbles, meetings, personality)
 const openrouter = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': 'https://github.com/kiingor/pixel-support-office',
-    'X-Title': 'Pixel Support Office',
-  },
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  apiKey: process.env.GOOGLE_API_KEY,
 });
-const THINKING_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
+const THINKING_MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash-lite';
 
 export interface ClassificationResult {
   classificacao: 'duvida' | 'bug';
