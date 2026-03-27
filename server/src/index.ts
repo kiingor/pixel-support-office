@@ -1432,6 +1432,7 @@ async function start() {
 
   setInterval(() => syncRepo(), 30 * 60 * 1000);
   setInterval(runLogAnalysis, 5 * 60 * 1000);
+  setInterval(idleAgentLife, 22000); // Agent idle life every 22s
 
   httpServer.listen(PORT, () => {
     console.log(`\n[Server] Running on http://localhost:${PORT}`);
@@ -1440,6 +1441,162 @@ async function start() {
     console.log(`[Server] Code: ${codeOk ? '✅ 187 files loaded' : '❌ Not loaded'}`);
     console.log(`[Server] AI: Claude Sonnet 4\n`);
   });
+}
+
+// --- IDLE AGENT LIFE ---
+// Situations per role when agent is idle (used by Gemini to generate bubble text)
+const IDLE_SITUATIONS: Record<string, string[]> = {
+  suporte: [
+    'Você está esperando um novo ticket chegar e olhando para a tela',
+    'Você acabou de resolver um ticket e está se alongando na cadeira',
+    'Você está lendo a documentação do sistema enquanto espera',
+    'Você está tomando café e pensando nos tickets de hoje',
+    'Você está ouvindo música enquanto monitora a fila de atendimento',
+  ],
+  qa: [
+    'Você está revisando um checklist de testes no caderno',
+    'Você encontrou um bug estranho num sistema e está intrigado',
+    'Você está organizando os casos de teste do sprint',
+    'Você está pensando em cenários de edge case que ninguém testou ainda',
+    'Você está bebendo água e pensando em como melhorar o processo de QA',
+  ],
+  qa_manager: [
+    'Você está analisando as métricas de qualidade da semana',
+    'Você está planejando a reunião de alinhamento com o time de QA',
+    'Você está revisando o relatório de bugs do mês',
+    'Você está pensando em como melhorar o SLA do time',
+    'Você está olhando o dashboard e vendo se os números estão bons',
+  ],
+  dev: [
+    'Você está olhando para aquele código legado que ninguém quer tocar',
+    'Você está pensando em uma refatoração que melhoraria tudo',
+    'Você está debugando um problema que não faz sentido algum',
+    'Você acabou de fazer um commit e está esperando o CI rodar',
+    'Você está lendo sobre uma nova tecnologia que poderia resolver um problema antigo',
+  ],
+  dev_lead: [
+    'Você está revisando o planejamento técnico do próximo sprint',
+    'Você está pensando nos riscos arquiteturais do sistema atual',
+    'Você está avaliando se a dívida técnica vai ser um problema sério',
+    'Você está pensando em como dividir uma tarefa grande para o time',
+    'Você está olhando o roadmap técnico e fazendo ajustes mentais',
+  ],
+  log_analyzer: [
+    'Você está monitorando os logs em tempo real com atenção total',
+    'Você detectou um padrão suspeito nos logs e está investigando',
+    'Você está correlacionando eventos de diferentes serviços',
+    'Você está criando uma nova regra de alerta nos logs',
+    'Você está analisando a frequência de erros das últimas horas',
+  ],
+  ceo: [
+    'Você está analisando os KPIs do escritório e planejando próximos passos',
+    'Você está pensando em como expandir o time de suporte',
+    'Você está revisando os casos resolvidos e a satisfação dos clientes',
+    'Você está planejando uma reunião de alinhamento com todos os times',
+    'Você está pensando na visão de longo prazo para o escritório',
+  ],
+};
+
+// Sectors agents can visit when idle (excluding their home sector)
+const VISITABLE_SECTORS: Record<string, string[]> = {
+  suporte: ['QA_ROOM', 'DEV_ROOM', 'LOGS_ROOM'],
+  qa: ['DEV_ROOM', 'RECEPTION', 'LOGS_ROOM'],
+  qa_manager: ['DEV_ROOM', 'RECEPTION', 'CEO_ROOM'],
+  dev: ['QA_ROOM', 'RECEPTION', 'LOGS_ROOM'],
+  dev_lead: ['QA_ROOM', 'RECEPTION', 'CEO_ROOM'],
+  log_analyzer: ['QA_ROOM', 'RECEPTION', 'DEV_ROOM'],
+  ceo: ['QA_ROOM', 'DEV_ROOM', 'RECEPTION', 'LOGS_ROOM'],
+};
+
+// Track which agents are currently visiting another sector (to send them back)
+const agentVisiting = new Map<string, ReturnType<typeof setTimeout>>();
+
+async function idleAgentLife() {
+  const allAgents = getActiveAgentsList();
+  if (allAgents.length === 0) return;
+
+  // Pick a random agent
+  const agent = allAgents[Math.floor(Math.random() * allAgents.length)];
+  const personality = agentPersonalities.get(agent.name) || '';
+  const situations = IDLE_SITUATIONS[agent.role] || IDLE_SITUATIONS['suporte'];
+  const situation = situations[Math.floor(Math.random() * situations.length)];
+
+  const roll = Math.random();
+
+  if (roll < 0.55) {
+    // 55% — just a thought bubble, agent stays put
+    const bubbleText = await generateBubble(agent.name, personality, situation);
+    io.emit('agent:bubble', {
+      agentName: agent.name,
+      role: agent.role,
+      text: bubbleText,
+      type: 'chat',
+      duration: 6000,
+    });
+
+  } else {
+    // 45% — walk to another sector, say something, then return
+    const visitable = VISITABLE_SECTORS[agent.role] || ['RECEPTION'];
+    const targetSector = visitable[Math.floor(Math.random() * visitable.length)];
+
+    // Don't send if already visiting somewhere
+    if (agentVisiting.has(agent.name)) return;
+
+    const walkSituations = [
+      `Você vai dar uma volta até a sala ${targetSector.replace('_', ' ')} visitar um colega`,
+      'Você vai até a outra sala pegar um café e trocar uma ideia',
+      'Você vai verificar pessoalmente como está o trabalho do outro time',
+    ];
+    const walkSituation = walkSituations[Math.floor(Math.random() * walkSituations.length)];
+    const bubbleText = await generateBubble(agent.name, personality, walkSituation);
+
+    io.emit('agent:bubble', {
+      agentName: agent.name,
+      role: agent.role,
+      text: bubbleText,
+      type: 'chat',
+      duration: 3000,
+    });
+
+    // Walk to the sector
+    setTimeout(() => {
+      io.emit('agent:walk_to', {
+        agentName: agent.name,
+        role: agent.role,
+        toSectorId: targetSector,
+        message: '',
+      });
+    }, 1500);
+
+    // Optional: say something when arriving
+    const arrivalDelay = 8000 + Math.random() * 6000;
+    setTimeout(async () => {
+      const arrivalSituations = [
+        'Você chegou até a mesa de um colega para uma visita rápida',
+        'Você está de visita em outra sala e começa uma conversa casual',
+      ];
+      const arrivalText = await generateBubble(
+        agent.name, personality,
+        arrivalSituations[Math.floor(Math.random() * arrivalSituations.length)]
+      );
+      io.emit('agent:bubble', {
+        agentName: agent.name,
+        role: agent.role,
+        text: arrivalText,
+        type: 'chat',
+        duration: 5000,
+      });
+    }, arrivalDelay);
+
+    // Return to home sector after 20-40 seconds
+    const returnDelay = 20000 + Math.random() * 20000;
+    const timer = setTimeout(() => {
+      io.emit('agent:return_to_seat', { agentName: agent.name });
+      agentVisiting.delete(agent.name);
+    }, returnDelay);
+
+    agentVisiting.set(agent.name, timer);
+  }
 }
 
 start().catch(console.error);
