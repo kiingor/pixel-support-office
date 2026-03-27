@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
 import { addBubble } from '../engine/characters';
 import type { SectorId, AgentRole } from '../types/agents';
+import { generateAgentPersonality } from '../types/agentProfile';
 
 // In production, connect to same host. In dev, use localhost:3001
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (

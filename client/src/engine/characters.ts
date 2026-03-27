@@ -5,15 +5,20 @@ import { ROLE_SECTOR, AGENT_NAMES } from '../types/agents';
 import { getCharacterSprites } from '../sprites/characterSprites';
 import { findPath, findPathNear, isWalkable } from './pathfinding';
 import type { TileType } from '../types/office';
-
-const WALK_SPEED = 48; // pixels per second
-const ANIM_FRAME_DURATION = 0.2; // seconds per frame
-const WANDER_MIN = 4; // min seconds between wanders
-const WANDER_MAX = 12; // max seconds
+import type { PersonalityBehavior } from '../types/agentProfile';
 
 let nextId = 0;
 const usedNames: Record<AgentRole, number> = {
-  ceo: 0, suporte: 0, qa: 0, dev: 0, log_analyzer: 0,
+  ceo: 0, suporte: 0, qa: 0, qa_manager: 0, dev: 0, dev_lead: 0, log_analyzer: 0,
+};
+
+const DEFAULT_BEHAVIOR: PersonalityBehavior = {
+  walkSpeed: 48,
+  idleTurnInterval: 5.5,
+  bubbleInterval: 14,
+  wanderInterval: 20,
+  animFrameDuration: 0.20,
+  quirkBubbles: [],
 };
 
 export function createCharacter(
@@ -22,6 +27,7 @@ export function createCharacter(
   seatRow: number,
   seatId: string,
   sectorId: SectorId,
+  behavior: PersonalityBehavior = DEFAULT_BEHAVIOR,
 ): Character {
   const nameList = AGENT_NAMES[role];
   const nameIdx = usedNames[role] % nameList.length;
@@ -47,7 +53,19 @@ export function createCharacter(
     currentTaskId: null,
     targetSectorId: null,
     bubbles: [],
-    wanderTimer: WANDER_MIN + Math.random() * (WANDER_MAX - WANDER_MIN),
+    // Personality behavior
+    walkSpeed: behavior.walkSpeed,
+    animFrameDuration: behavior.animFrameDuration,
+    seatCol,
+    seatRow,
+    quirkBubbles: behavior.quirkBubbles,
+    // Idle behavior timers (staggered so not all fire at once)
+    idleTurnTimer: Math.random() * behavior.idleTurnInterval,
+    idleTurnInterval: behavior.idleTurnInterval,
+    idleBubbleTimer: Math.random() * behavior.bubbleInterval,
+    bubbleInterval: behavior.bubbleInterval,
+    wanderTimer: Math.random() * behavior.wanderInterval,
+    wanderInterval: behavior.wanderInterval,
     wanderCooldown: 0,
   };
 }
@@ -67,11 +85,11 @@ export function updateCharacter(
   tiles: TileType[][],
   blockedTiles: Set<string>,
 ): void {
-  // Update animation timer — only advance frames while walking
-  if (ch.state === CharacterState.WALK) {
+  // Update animation timer — advance frames while walking or typing
+  if (ch.state === CharacterState.WALK || ch.state === CharacterState.TYPE) {
     ch.animTimer += dt;
-    if (ch.animTimer >= ANIM_FRAME_DURATION) {
-      ch.animTimer -= ANIM_FRAME_DURATION;
+    if (ch.animTimer >= ch.animFrameDuration) {
+      ch.animTimer -= ch.animFrameDuration;
       ch.animFrame++;
     }
   } else {
@@ -88,9 +106,11 @@ export function updateCharacter(
       updateWalking(ch, dt);
       break;
     case CharacterState.IDLE:
-      updateIdle(ch, dt, tiles, blockedTiles);
+      updateIdleBehaviors(ch, dt, tiles, blockedTiles, true);
       break;
     case CharacterState.TYPE:
+      updateIdleBehaviors(ch, dt, tiles, blockedTiles, false);
+      break;
     case CharacterState.TALK:
       // Just animate in place
       break;
@@ -130,7 +150,7 @@ function updateWalking(ch: Character, dt: number): void {
     ch.direction = dy > 0 ? Direction.DOWN : Direction.UP;
   }
 
-  const speed = WALK_SPEED * dt;
+  const speed = ch.walkSpeed * dt;
   const moveX = (dx / dist) * Math.min(speed, dist);
   const moveY = (dy / dist) * Math.min(speed, dist);
 
@@ -138,15 +158,59 @@ function updateWalking(ch: Character, dt: number): void {
   ch.pixelY += moveY;
 }
 
-function updateIdle(
-  _ch: Character,
-  _dt: number,
-  _tiles: TileType[][],
-  _blockedTiles: Set<string>,
+const DIRECTIONS = [Direction.DOWN, Direction.LEFT, Direction.UP, Direction.RIGHT];
+
+function updateIdleBehaviors(
+  ch: Character,
+  dt: number,
+  tiles: TileType[][],
+  blockedTiles: Set<string>,
+  allowWander: boolean,
 ): void {
-  // Agents stay at their desks. They only move when explicitly told to
-  // (via sendCharacterTo for tasks, escalations, or chat commands).
-  // No random wandering.
+  // 1. Sitting direction change
+  ch.idleTurnTimer += dt;
+  if (ch.idleTurnTimer >= ch.idleTurnInterval) {
+    ch.idleTurnTimer = 0;
+    const idx = (DIRECTIONS.indexOf(ch.direction) + 1) % DIRECTIONS.length;
+    ch.direction = DIRECTIONS[idx];
+  }
+
+  // 2. Random quirk bubble (only when no active bubbles)
+  if (ch.quirkBubbles.length > 0 && ch.bubbles.length === 0) {
+    ch.idleBubbleTimer += dt;
+    if (ch.idleBubbleTimer >= ch.bubbleInterval) {
+      ch.idleBubbleTimer = 0;
+      const text = ch.quirkBubbles[Math.floor(Math.random() * ch.quirkBubbles.length)];
+      addBubble(ch, text, 'chat', 5);
+    }
+  }
+
+  // 3. Micro-wander (only while truly idle, not while typing)
+  if (!allowWander) return;
+
+  if (ch.wanderCooldown < 0) {
+    // Return to seat after wander
+    sendCharacterTo(ch, ch.seatCol, ch.seatRow, tiles, blockedTiles);
+    ch.wanderCooldown = ch.wanderInterval * 0.4;
+  } else if (ch.wanderCooldown > 0) {
+    ch.wanderCooldown -= dt;
+  } else {
+    ch.wanderTimer += dt;
+    if (ch.wanderTimer >= ch.wanderInterval) {
+      ch.wanderTimer = 0;
+      const candidates = [
+        { col: ch.seatCol + 1, row: ch.seatRow },
+        { col: ch.seatCol - 1, row: ch.seatRow },
+        { col: ch.seatCol,     row: ch.seatRow + 1 },
+        { col: ch.seatCol,     row: ch.seatRow - 1 },
+      ].filter(p => isWalkable(p.col, p.row, tiles, blockedTiles));
+      if (candidates.length > 0) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        sendCharacterTo(ch, target.col, target.row, tiles, blockedTiles);
+        ch.wanderCooldown = -1; // signal: return to seat after arriving
+      }
+    }
+  }
 }
 
 /** Send a character walking to a specific position. */

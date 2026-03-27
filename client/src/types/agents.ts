@@ -1,6 +1,6 @@
 import type { CharacterState, Direction, Position, Bubble, CharacterSprites } from './office';
 
-export type AgentRole = 'ceo' | 'suporte' | 'qa' | 'dev' | 'log_analyzer';
+export type AgentRole = 'ceo' | 'suporte' | 'qa' | 'qa_manager' | 'dev' | 'dev_lead' | 'log_analyzer';
 export type SectorId = 'RECEPTION' | 'QA_ROOM' | 'DEV_ROOM' | 'LOGS_ROOM' | 'CEO_ROOM' | 'MEETING_ROOM';
 
 export interface Character {
@@ -38,8 +38,22 @@ export interface Character {
   // Speech bubbles
   bubbles: Bubble[];
 
-  // Wander timer
+  // Personality-driven visual behavior
+  walkSpeed: number;
+  animFrameDuration: number;
+  seatCol: number;
+  seatRow: number;
+  quirkBubbles: string[];
+
+  // Idle behavior timers
+  idleTurnTimer: number;
+  idleTurnInterval: number;
+  idleBubbleTimer: number;
+  bubbleInterval: number;
+
+  // Wander timers (wanderCooldown = -1 means "return to seat needed")
   wanderTimer: number;
+  wanderInterval: number;
   wanderCooldown: number;
 }
 
@@ -60,7 +74,9 @@ export const ROLE_SECTOR: Record<AgentRole, SectorId> = {
   ceo: 'CEO_ROOM',
   suporte: 'RECEPTION',
   qa: 'QA_ROOM',
+  qa_manager: 'QA_ROOM',
   dev: 'DEV_ROOM',
+  dev_lead: 'DEV_ROOM',
   log_analyzer: 'LOGS_ROOM',
 };
 
@@ -68,6 +84,8 @@ export const AGENT_NAMES: Record<AgentRole, string[]> = {
   ceo: ['Director Silva'],
   suporte: ['Ana', 'Bruno', 'Carla', 'Daniel', 'Elena', 'Felipe'],
   qa: ['Carlos', 'Marina', 'Rafael', 'Patricia', 'Thiago'],
+  qa_manager: ['Beatriz', 'Rodrigo'],
   dev: ['Lucas', 'Julia', 'Pedro', 'Fernanda', 'Gustavo'],
+  dev_lead: ['Alexandre', 'Camila'],
   log_analyzer: ['Monitor', 'Sentinel', 'Vigil', 'Watcher'],
 };

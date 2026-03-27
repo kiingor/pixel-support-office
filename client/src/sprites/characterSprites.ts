@@ -18,7 +18,9 @@ const ROLE_CHAR_INDEX: Record<AgentRole, number> = {
   ceo: 0,
   suporte: 1,
   qa: 2,
+  qa_manager: 2,
   dev: 3,
+  dev_lead: 3,
   log_analyzer: 4,
 };
 
@@ -27,7 +29,9 @@ const ROLE_HUE_SHIFT: Record<AgentRole, number> = {
   ceo: 0,
   suporte: 0,
   qa: 0,
+  qa_manager: 40,
   dev: 0,
+  dev_lead: 60,
   log_analyzer: 0,
 };
 

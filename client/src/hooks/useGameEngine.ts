@@ -8,20 +8,23 @@ import { setLoadedFloors, setLoadedWalls } from '../sprites/tileSprites';
 import { setLoadedFurniture } from '../sprites/furnitureSprites';
 import { clearSpriteCache } from '../engine/spriteCache';
 import type { AgentRole } from '../types/agents';
+import { generateAgentPersonality, parsePersonalityBehavior } from '../types/agentProfile';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
   window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
 );
 
 function createDefaultAgents(officeState: OfficeState) {
-  const defaultRoles: AgentRole[] = ['ceo', 'suporte', 'qa', 'dev', 'log_analyzer'];
+  const defaultRoles: AgentRole[] = ['ceo', 'suporte', 'qa', 'qa_manager', 'dev', 'dev_lead', 'log_analyzer'];
   for (const role of defaultRoles) {
-    const ch = officeState.addAgent(role);
+    const personality = generateAgentPersonality();
+    const behavior = parsePersonalityBehavior(personality);
+    const ch = officeState.addAgent(role, behavior);
     if (ch) {
       // Notify backend to save (if connected via socket)
       const socket = useOfficeStore.getState().socket;
       if (socket) {
-        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role });
+        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role, personality });
       }
     }
   }
@@ -96,10 +99,11 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
       }) => {
         const agents = state.agents || [];
         if (agents.length > 0) {
-          // Restore agents from DB
+          // Restore agents from DB (behavior is cosmetic/stateless — regenerate randomly)
           for (const agent of agents) {
             const role = (agent.type || 'suporte') as AgentRole;
-            const ch = officeState.addAgent(role);
+            const behavior = parsePersonalityBehavior(generateAgentPersonality());
+            const ch = officeState.addAgent(role, behavior);
             if (ch) {
               ch.id = agent.id;
               ch.name = agent.name;

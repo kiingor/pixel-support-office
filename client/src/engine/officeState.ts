@@ -2,6 +2,7 @@ import { TileType, CharacterState, TILE_SIZE } from '../types/office';
 import type { Seat, FurnitureInstance } from '../types/office';
 import type { Character, AgentRole, SectorId, AgentTask } from '../types/agents';
 import { ROLE_SECTOR } from '../types/agents';
+import type { PersonalityBehavior } from '../types/agentProfile';
 import { OFFICE_TILES, OFFICE_FURNITURE, OFFICE_COLS, OFFICE_ROWS } from '../layout/officeLayout';
 import { SECTORS, buildSeats, findAvailableSeat } from '../layout/sectorConfig';
 import { buildFurnitureInstances, buildBlockedTiles } from '../layout/furniturePlacer';
@@ -55,7 +56,7 @@ export class OfficeState {
     for (const cb of this.listeners) cb(event);
   }
 
-  addAgent(role: AgentRole): Character | null {
+  addAgent(role: AgentRole, behavior?: PersonalityBehavior): Character | null {
     const sectorId = ROLE_SECTOR[role];
     const seat = findAvailableSeat(this.seats, sectorId);
     if (!seat) return null; // No available seats
@@ -66,7 +67,7 @@ export class OfficeState {
     // Spawn at the door of the sector
     const door = sector.doorPosition;
 
-    const ch = createCharacter(role, door.col, door.row, seat.id, sectorId);
+    const ch = createCharacter(role, door.col, door.row, seat.id, sectorId, behavior);
     this.characters.set(ch.id, ch);
 
     // Walk to seat
@@ -78,6 +79,9 @@ export class OfficeState {
       ch.row = seat.row;
       ch.pixelX = seat.col * TILE_SIZE;
       ch.pixelY = seat.row * TILE_SIZE;
+      // Record actual seat position for wander return
+      ch.seatCol = seat.col;
+      ch.seatRow = seat.row;
     }});
 
     sendCharacterTo(ch, seat.col, seat.row, this.tiles, this.blockedTiles);

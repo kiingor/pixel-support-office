@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useOfficeStore } from '../stores/officeStore';
 
 const ROLE_COLORS: Record<string, string> = {
-  ceo: '#f0c040', suporte: '#4488ff', qa: '#aa44ff', dev: '#ff8844', log_analyzer: '#44cc88',
+  ceo: '#f0c040', suporte: '#4488ff', qa: '#aa44ff', qa_manager: '#cc66ff',
+  dev: '#ff8844', dev_lead: '#ff5522', log_analyzer: '#44cc88',
 };
 const ROLE_LABELS: Record<string, string> = {
-  ceo: 'CEO', suporte: 'Suporte', qa: 'QA', dev: 'DEV', log_analyzer: 'Log Analyzer',
+  ceo: 'CEO', suporte: 'Suporte', qa: 'QA', qa_manager: 'Gerente QA',
+  dev: 'DEV', dev_lead: 'Tech Lead', log_analyzer: 'Log Analyzer',
 };
 
 export function MeetingChat() {

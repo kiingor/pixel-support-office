@@ -1,4 +1,4 @@
-export type AgentRole = 'ceo' | 'suporte' | 'qa' | 'dev' | 'log_analyzer';
+export type AgentRole = 'ceo' | 'suporte' | 'qa' | 'qa_manager' | 'dev' | 'dev_lead' | 'log_analyzer';
 export type SectorId = 'RECEPTION' | 'QA_ROOM' | 'DEV_ROOM' | 'LOGS_ROOM' | 'CEO_ROOM';
 export type TaskStatus = 'pending' | 'processing' | 'done' | 'escalated';
 export type TicketClassification = 'duvida' | 'bug';

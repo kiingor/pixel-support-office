@@ -10,7 +10,9 @@ const ROLE_LABELS: Record<AgentRole, string> = {
   ceo: 'CEO',
   suporte: 'Suporte',
   qa: 'QA',
+  qa_manager: 'Gerente QA',
   dev: 'DEV',
+  dev_lead: 'Tech Lead',
   log_analyzer: 'Log Analyzer',
 };
 
@@ -18,7 +20,9 @@ const ROLE_COLORS: Record<AgentRole, string> = {
   ceo: '#f0c040',
   suporte: '#4488ff',
   qa: '#aa44ff',
+  qa_manager: '#cc66ff',
   dev: '#ff8844',
+  dev_lead: '#ff5522',
   log_analyzer: '#44cc88',
 };
 

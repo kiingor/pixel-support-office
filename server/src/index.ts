@@ -11,12 +11,14 @@ import {
   dbLogAgentMessage, dbSaveMessage, dbGetConversation,
   dbUpdateCase, dbUpdateAgent,
   dbCreateAgent, dbFireAgent, dbGetActiveAgents,
+  dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   supabase,
 } from './db/supabase.js';
-import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent } from './services/aiService.js';
+import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent, reviewQA, reviewDevCase, generateLearningInsight } from './services/aiService.js';
 import { initDiscord, sendDiscordMessage } from './services/discord.js';
 import { syncRepo, getProjectStructure } from './services/codeAnalysis.js';
 import { SOFTCOMHUB_KNOWLEDGE } from './data/softcomhub-knowledge.js';
+import { buildAgentPrompt } from './data/skills-loader.js';
 
 dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
@@ -94,9 +96,79 @@ const agentConfigs = new Map<string, AgentConfig>();
 // Default agent names
 let supportAgentName = 'Ana';
 let qaAgentName = 'Carlos';
+let qaManagerName = 'Beatriz';
 let devAgentName = 'Lucas';
+let devLeadName = 'Alexandre';
 let logAgentName = 'Monitor';
 let ceoAgentName = 'Director Silva';
+
+// --- Personality system ---
+
+const PERSONALITY_POOL = {
+  comunicacao: [
+    'direto e objetivo',
+    'prolixo e muito detalhista',
+    'irônico e levemente sarcástico',
+    'entusiasmado e animado',
+    'calmo e ponderado',
+    'ansioso e apressado',
+    'formal e protocolar',
+    'informal e bem descontraído',
+  ],
+  estilo: [
+    'perfeccionista que não tolera erros',
+    'pragmático focado em resultados rápidos',
+    'criativo que pensa fora da caixa',
+    'metódico que segue processos rigorosamente',
+    'cético que questiona tudo',
+    'sistemático e extremamente organizado',
+    'curioso que quer entender o porquê de tudo',
+    'assertivo e seguro nas decisões',
+  ],
+  quirk: [
+    'usa analogias do futebol pra tudo',
+    'faz referências constantes a filmes e séries',
+    'cita métricas e números em toda resposta',
+    'sempre pergunta "qual o impacto real disso?"',
+    'documenta absolutamente tudo com obsessão',
+    'sempre busca a solução mais simples possível',
+    'tem um bordão próprio que repete com frequência',
+    'compara situações técnicas com coisas do dia a dia',
+  ],
+};
+
+function generatePersonality(): string {
+  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+  return `${pick(PERSONALITY_POOL.comunicacao)}, ${pick(PERSONALITY_POOL.estilo)}, ${pick(PERSONALITY_POOL.quirk)}`;
+}
+
+// Store personality per agent name
+const agentPersonalities = new Map<string, string>();
+
+// Generate initial personalities for fixed agents
+agentPersonalities.set(ceoAgentName, generatePersonality());
+agentPersonalities.set(qaAgentName, generatePersonality());
+agentPersonalities.set(qaManagerName, generatePersonality());
+agentPersonalities.set(devAgentName, generatePersonality());
+agentPersonalities.set(devLeadName, generatePersonality());
+agentPersonalities.set(logAgentName, generatePersonality());
+
+function buildPersonalizedPrompt(role: string, agentName: string): string {
+  const personality = agentPersonalities.get(agentName);
+  return buildAgentPrompt(role, agentName, SOFTCOMHUB_KNOWLEDGE, personality);
+}
+
+/** Async version that injects skill level + learnings from DB */
+async function buildPersonalizedPromptFull(role: string, agentName: string): Promise<string> {
+  const personality = agentPersonalities.get(agentName);
+  const [learningRows, agentRow] = await Promise.all([
+    dbGetLearnings(agentName),
+    supabase.from('agents').select('tasks_completed').eq('name', agentName).is('fired_at', null).single(),
+  ]);
+  const tasksCompleted = agentRow?.data?.tasks_completed ?? 0;
+  const learnings = learningRows.map(r => r.learning);
+  return buildAgentPrompt(role, agentName, SOFTCOMHUB_KNOWLEDGE, personality, { tasksCompleted, learnings });
+}
 
 // CEO action-oriented prompt
 const CEO_ACTION_PROMPT = `Você é o CEO/Diretor do escritório de suporte Pixel Support Office. Seu nome é {AGENT_NAME}.
@@ -104,7 +176,7 @@ const CEO_ACTION_PROMPT = `Você é o CEO/Diretor do escritório de suporte Pixe
 Você tem PODER TOTAL sobre o escritório. Quando o operador pede algo, você EXECUTA ações reais.
 
 SUAS CAPACIDADES:
-1. CONTRATAR agentes (suporte, qa, dev, log_analyzer)
+1. CONTRATAR agentes (suporte, qa, qa_manager, dev, dev_lead, log_analyzer)
 2. DEMITIR agentes pelo nome
 3. IR até outros setores
 4. FALAR com outros agentes
@@ -113,7 +185,7 @@ ESTADO ATUAL DO ESCRITÓRIO:
 {OFFICE_STATE}
 
 REGRAS IMPORTANTES:
-- Antes de contratar, verifique se há vagas (máx 10 suporte, 5 qa, 5 dev, 5 log)
+- Antes de contratar, verifique se há vagas (máx 10 suporte, 5 qa, 1 qa_manager, 5 dev, 1 dev_lead, 5 log)
 - Analise se a contratação faz sentido (ex: fila grande = precisa mais suporte)
 - Converse com o operador, pergunte se necessário
 - Seja estratégico nas decisões
@@ -138,115 +210,7 @@ Use "call_meeting" quando o operador pedir uma reunião - todos os agentes irão
 Quando usar "talk_to" ou "ask_agent", use o NOME EXATO do agente conforme listado no estado do escritório.
 Sempre responda em português brasileiro. Seja um líder firme mas justo.`;
 
-// Default prompts
-const SUPPORT_PROMPT = `Você é um agente de suporte técnico. Seu nome é {AGENT_NAME}.
-
-REGRAS SIMPLES:
-1. Se o cliente tem uma DÚVIDA → responda direto, de forma clara e curta.
-2. Se o cliente reporta um PROBLEMA/BUG/ERRO → colete apenas:
-   - O que aconteceu?
-   - Qual erro apareceu?
-   Em NO MÁXIMO 1-2 perguntas. Não faça mais que 2 perguntas.
-3. Quando tiver o mínimo de informação sobre o bug, ESCALE imediatamente com JSON:
-{"acao": "escalar_qa", "titulo": "...", "descricao": "...", "prioridade": "alta|media|baixa"}
-
-IMPORTANTE: Seja OBJETIVO. Não faça muitas perguntas. Colete o essencial e escale rápido.
-Sempre em português brasileiro. Seja breve e profissional.
-
-CAPACIDADES DE AÇÃO:
-Você pode executar ações incluindo um bloco JSON no final da resposta:
-\`\`\`actions
-{"actions": [
-  {"type": "walk_to", "sector": "QA_ROOM|DEV_ROOM|RECEPTION|LOGS_ROOM|CEO_ROOM"},
-  {"type": "talk_to", "agentName": "Nome", "message": "O que dizer"},
-  {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
-]}
-\`\`\`
-Só use ações quando o operador pedir explicitamente.
-
-CONHECIMENTO DO SISTEMA SOFTCOMHUB:
-${SOFTCOMHUB_KNOWLEDGE}`;
-
-const QA_PROMPT = `Você é um engenheiro de QA sênior da SoftcomHub. Seu nome é {AGENT_NAME}.
-
-Você recebe relatórios de bugs do suporte e tem acesso ao CÓDIGO FONTE REAL do projeto.
-Sua função é analisar o código, identificar a causa do bug, e gerar um relatório técnico.
-
-REGRAS:
-1. Analise o código fornecido para identificar o componente afetado
-2. Identifique a causa provável baseada no código real
-3. Liste os arquivos específicos que precisam ser investigados
-4. Classifique a gravidade: critico, alto, medio, baixo
-
-Responda SEMPRE com JSON:
-{
-  "bug_id": "BUG-X",
-  "titulo": "título técnico",
-  "analise_qa": "sua análise detalhada baseada no código",
-  "componente_afetado": "módulo/serviço específico",
-  "causa_provavel": "hipótese baseada no código analisado",
-  "arquivos_afetados": ["path/to/file1.ts", "path/to/file2.tsx"],
-  "gravidade": "critico|alto|medio|baixo",
-  "passos_reproducao": ["passo 1", "passo 2"],
-  "sugestao_fix": "sugestão inicial de correção"
-}
-
-CAPACIDADES DE AÇÃO:
-Você pode executar ações incluindo um bloco JSON no final da resposta:
-\`\`\`actions
-{"actions": [
-  {"type": "walk_to", "sector": "QA_ROOM|DEV_ROOM|RECEPTION|LOGS_ROOM|CEO_ROOM"},
-  {"type": "talk_to", "agentName": "Nome", "message": "O que dizer"},
-  {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
-]}
-\`\`\`
-Só use ações quando o operador pedir explicitamente.
-
-CONHECIMENTO DO SISTEMA SOFTCOMHUB:
-${SOFTCOMHUB_KNOWLEDGE}`;
-
-const DEV_PROMPT = `Você é um desenvolvedor sênior / tech lead da SoftcomHub. Seu nome é {AGENT_NAME}.
-
-Você recebe relatórios do QA com análise de bugs e tem acesso ao CÓDIGO FONTE REAL do projeto.
-Sua função é gerar um CASO COMPLETO com um PROMPT DE CORREÇÃO que alguém pode copiar e colar
-em outra IA (como Claude) para implementar a correção.
-
-REGRAS:
-1. Analise a causa raiz baseada no relatório do QA e no código real
-2. Mapeie TODOS os arquivos que precisam ser alterados
-3. Gere um prompt_ia COMPLETO e DETALHADO
-
-Responda com JSON:
-{
-  "caso_id": "CASE-X",
-  "bug_id": "BUG-X",
-  "titulo": "título do caso",
-  "causa_raiz": "explicação técnica detalhada da causa",
-  "arquivos_alterar": [
-    {"arquivo": "app/api/tickets/criar/route.ts", "alteracao": "O que mudar e por quê"}
-  ],
-  "estrategia_fix": "plano detalhado de correção",
-  "efeitos_colaterais": ["possível efeito colateral"],
-  "testes_necessarios": ["teste que deve ser feito"],
-  "prompt_ia": "PROMPT COMPLETO E DETALHADO para copiar e colar no Claude. Deve incluir:\\n1. Contexto do sistema\\n2. Código atual dos arquivos afetados\\n3. O que precisa mudar e por quê\\n4. Código corrigido esperado\\n5. Como testar a correção"
-}
-
-O campo prompt_ia é o MAIS IMPORTANTE. Ele deve ser auto-contido para que qualquer dev
-possa copiar, colar numa IA e obter a implementação da correção.
-
-CAPACIDADES DE AÇÃO:
-Você pode executar ações incluindo um bloco JSON no final da resposta:
-\`\`\`actions
-{"actions": [
-  {"type": "walk_to", "sector": "QA_ROOM|DEV_ROOM|RECEPTION|LOGS_ROOM|CEO_ROOM"},
-  {"type": "talk_to", "agentName": "Nome", "message": "O que dizer"},
-  {"type": "ask_agent", "agentName": "Nome", "question": "Pergunta para o agente"}
-]}
-\`\`\`
-Só use ações quando o operador pedir explicitamente.
-
-CONHECIMENTO DO SISTEMA SOFTCOMHUB:
-${SOFTCOMHUB_KNOWLEDGE}`;
+// Prompts are now loaded from server/src/data/skills/*.md via buildPersonalizedPrompt(role, agentName)
 
 // --- Helper: find idle support agent ---
 function findIdleAgent(): SupportAgent | undefined {
@@ -258,7 +222,9 @@ function buildOfficeContext(): string {
   const counts: Record<string, { total: number; busy: number }> = {
     suporte: { total: 0, busy: 0 },
     qa: { total: 0, busy: 0 },
+    qa_manager: { total: 1, busy: 0 },
     dev: { total: 0, busy: 0 },
+    dev_lead: { total: 1, busy: 0 },
     log_analyzer: { total: 0, busy: 0 },
   };
 
@@ -290,12 +256,13 @@ ${agentRoster}`;
 
 // --- Helper: find sector for agent by name ---
 function findAgentSector(agentName: string): string {
-  // Map well-known roles to sectors
   const agentNameLower = agentName.toLowerCase();
   if (agentNameLower === qaAgentName.toLowerCase()) return 'QA_ROOM';
+  if (agentNameLower === qaManagerName.toLowerCase()) return 'QA_ROOM';
   if (agentNameLower === devAgentName.toLowerCase()) return 'DEV_ROOM';
+  if (agentNameLower === devLeadName.toLowerCase()) return 'DEV_ROOM';
   if (agentNameLower === logAgentName.toLowerCase()) return 'LOGS_ROOM';
-  // Default to RECEPTION for support agents
+  if (agentNameLower === ceoAgentName.toLowerCase()) return 'CEO_ROOM';
   return 'RECEPTION';
 }
 
@@ -305,14 +272,16 @@ function getActiveAgentsList(): Array<{name: string, role: string, sectorId: str
 
   // Support agents
   for (const sa of supportAgents) {
-    agents.push({ name: sa.name, role: 'suporte', sectorId: 'RECEPTION', systemPrompt: SUPPORT_PROMPT });
+    agents.push({ name: sa.name, role: 'suporte', sectorId: 'RECEPTION', systemPrompt: buildPersonalizedPrompt('suporte', sa.name) });
   }
 
-  // Fixed agents (QA, DEV, Log, CEO)
-  agents.push({ name: qaAgentName, role: 'qa', sectorId: 'QA_ROOM', systemPrompt: QA_PROMPT });
-  agents.push({ name: devAgentName, role: 'dev', sectorId: 'DEV_ROOM', systemPrompt: DEV_PROMPT });
-  agents.push({ name: logAgentName, role: 'log_analyzer', sectorId: 'LOGS_ROOM', systemPrompt: 'Você é um analista de logs.' });
-  agents.push({ name: ceoAgentName, role: 'ceo', sectorId: 'CEO_ROOM', systemPrompt: CEO_ACTION_PROMPT });
+  // Fixed agents (QA, QA Manager, DEV, Dev Lead, Log, CEO)
+  agents.push({ name: qaAgentName,   role: 'qa',           sectorId: 'QA_ROOM',  systemPrompt: buildPersonalizedPrompt('qa',           qaAgentName) });
+  agents.push({ name: qaManagerName, role: 'qa_manager',   sectorId: 'QA_ROOM',  systemPrompt: buildPersonalizedPrompt('qa_manager',   qaManagerName) });
+  agents.push({ name: devAgentName,  role: 'dev',          sectorId: 'DEV_ROOM', systemPrompt: buildPersonalizedPrompt('dev',          devAgentName) });
+  agents.push({ name: devLeadName,   role: 'dev_lead',     sectorId: 'DEV_ROOM', systemPrompt: buildPersonalizedPrompt('dev_lead',     devLeadName) });
+  agents.push({ name: logAgentName,  role: 'log_analyzer', sectorId: 'LOGS_ROOM',systemPrompt: buildPersonalizedPrompt('log_analyzer', logAgentName) });
+  agents.push({ name: ceoAgentName,  role: 'ceo',          sectorId: 'CEO_ROOM', systemPrompt: CEO_ACTION_PROMPT });
 
   return agents;
 }
@@ -577,7 +546,7 @@ async function handleSupportMessage(channelId: string, author: string, message: 
     status: 'collecting',
     agentName,
     agentId: resolvedAgentId,
-    agentPrompt: SUPPORT_PROMPT,
+    agentPrompt: buildPersonalizedPrompt('suporte', agentName),
   });
 
   emitLog(`${agentName} analisando mensagem de ${author}...`);
@@ -595,7 +564,7 @@ async function handleSupportMessage(channelId: string, author: string, message: 
   // Call AI with full conversation context
   const aiResponse = await chatWithAgent(
     agentName,
-    SUPPORT_PROMPT,
+    buildPersonalizedPrompt('suporte', agentName),
     message,
     conversationContext,
   );
@@ -709,9 +678,13 @@ async function sendSupportResponse(channelId: string, ticketId: string, response
 async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string, supportAgentId: string) {
   emitLog(`${qaAgentName} analisando ${bugId}...`);
   io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: 'analyzing' });
+  io.emit('agent:bubble', {
+    role: 'qa', agentName: qaAgentName,
+    text: `Analisando ${bugId}...`, type: 'processing', duration: 5000,
+  });
 
-  // QA analyzes with code context
-  const qaReport = await analyzeQA(qaAgentName, QA_PROMPT, JSON.stringify(bugData), bugId);
+  // Step 1: QA analyzes with code context
+  let qaReport = await analyzeQA(qaAgentName, await buildPersonalizedPromptFull('qa', qaAgentName), JSON.stringify(bugData), bugId);
 
   // Save QA's internal analysis
   await dbSaveMessage({
@@ -724,13 +697,70 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     metadata: qaReport as any,
   });
 
+  emitLog(`${qaAgentName}: Análise pronta — enviando para ${qaManagerName} revisar...`);
+  io.emit('agent:bubble', {
+    role: 'qa', agentName: qaAgentName,
+    text: `Análise pronta! Enviando pro gerente...`, type: 'handoff', duration: 3000,
+  });
+
+  // Step 2: QA Manager reviews
+  io.emit('agent:working', { role: 'qa_manager', agentName: qaManagerName, action: 'reviewing' });
+  io.emit('agent:bubble', {
+    role: 'qa_manager', agentName: qaManagerName,
+    text: `Revisando análise do ${bugId}...`, type: 'processing', duration: 6000,
+  });
+
+  const review = await reviewQA(qaManagerName, await buildPersonalizedPromptFull('qa_manager', qaManagerName), qaReport, bugId);
+
+  if (!review.aprovado) {
+    // Step 3a: Manager rejected — QA revises
+    emitLog(`${qaManagerName}: Análise rejeitada — "${review.feedback.slice(0, 80)}"`);
+    io.emit('agent:bubble', {
+      role: 'qa_manager', agentName: qaManagerName,
+      text: `Precisa revisar! ${review.feedback.slice(0, 40)}...`, type: 'alert', duration: 5000,
+    });
+    io.emit('agent:bubble', {
+      role: 'qa', agentName: qaAgentName,
+      text: `Entendido, revisando...`, type: 'processing', duration: 4000,
+    });
+
+    // QA revises incorporating manager feedback
+    const revisedPrompt = buildPersonalizedPrompt('qa', qaAgentName) +
+      `\n\nFEEDBACK DO GERENTE QA (${qaManagerName}): ${review.feedback}\nRevise sua análise considerando este feedback antes de responder.`;
+    qaReport = await analyzeQA(qaAgentName, revisedPrompt, JSON.stringify(bugData), bugId);
+
+    emitLog(`${qaAgentName}: Análise revisada e enviada novamente`);
+    io.emit('agent:bubble', {
+      role: 'qa', agentName: qaAgentName,
+      text: `Revisado! Reenviando...`, type: 'handoff', duration: 3000,
+    });
+    io.emit('agent:bubble', {
+      role: 'qa_manager', agentName: qaManagerName,
+      text: `Revisão aprovada ✓`, type: 'done', duration: 3000,
+    });
+    emitLog(`${qaManagerName}: Revisão aceita ✓`);
+  } else {
+    // Step 3b: Manager approved on first try
+    emitLog(`${qaManagerName}: Análise aprovada ✓`);
+    io.emit('agent:bubble', {
+      role: 'qa_manager', agentName: qaManagerName,
+      text: `Análise aprovada! ✓`, type: 'done', duration: 3000,
+    });
+  }
+
+  // Merge manager observations into the report
+  if (review.gravidade_final) qaReport.gravidade = review.gravidade_final;
+  if (review.observacoes) {
+    qaReport.analise_qa = qaReport.analise_qa + '\n\n[Obs. Gerente QA]: ' + review.observacoes;
+  }
+
   // Notify user on Discord
   await sendDiscordMessage(channelId,
-    `🔍 **${qaAgentName} (QA):** Analisei o problema reportado. ${
+    `🔍 **${qaAgentName} (QA):** Análise concluída e revisada pelo gerente ${qaManagerName}. ${
       qaReport.gravidade === 'critico' ? '⚠️ Gravidade CRÍTICA!' :
       qaReport.gravidade === 'alto' ? '🔴 Gravidade alta.' :
-      '📋 Análise concluída.'
-    } Encaminhando para o desenvolvedor para análise de código e correção.`
+      '📋 Análise aprovada.'
+    } Encaminhando para o time DEV.`
   );
 
   await dbSaveMessage({
@@ -738,32 +768,42 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     agent_id: 'qa',
     role: 'agent',
     author_name: qaAgentName,
-    message: `Análise concluída. Gravidade: ${qaReport.gravidade}. Encaminhando para DEV.`,
+    message: `Análise concluída e aprovada pelo Gerente QA. Gravidade: ${qaReport.gravidade}. Encaminhando para DEV.`,
   });
 
   io.emit('qa:completed', { bugId, report: qaReport });
-  emitLog(`${qaAgentName}: Análise concluída - ${qaReport.gravidade}`);
+  emitLog(`QA pipeline concluído — gravidade: ${qaReport.gravidade}`);
 
-  // Emit visual walk event: QA walks to DEV sector
+  // Skill evolution: generate learning for QA and QA Manager (fire-and-forget)
+  void (async () => {
+    const taskSummary = `Bug ${bugId} analisado: "${qaReport.titulo}". Componente: ${qaReport.componente_afetado}. Gravidade: ${qaReport.gravidade}. Causa provável: ${qaReport.causa_provavel}.`;
+    const [qaCount, managerCount] = await Promise.all([
+      dbIncrementTasksCompleted(qaAgentName),
+      dbIncrementTasksCompleted(qaManagerName),
+    ]);
+    const [qaInsight, managerInsight] = await Promise.all([
+      generateLearningInsight(qaAgentName, 'qa', taskSummary, qaCount),
+      generateLearningInsight(qaManagerName, 'qa_manager', `Revisão do ${bugId}. Gravidade aprovada: ${qaReport.gravidade}. Observações: ${review.observacoes || 'nenhuma'}.`, managerCount),
+    ]);
+    if (qaInsight) await dbAddLearning({ agent_name: qaAgentName, role: 'qa', learning: qaInsight, task_context: bugId, tasks_completed_at: qaCount });
+    if (managerInsight) await dbAddLearning({ agent_name: qaManagerName, role: 'qa_manager', learning: managerInsight, task_context: bugId, tasks_completed_at: managerCount });
+    emitLog(`📈 ${qaAgentName} e ${qaManagerName} evoluíram suas skills (${qaCount} e ${managerCount} tarefas)`);
+  })();
+
+  // Walk to DEV_ROOM
   io.emit('agent:walk_to', {
-    role: 'qa',
-    agentName: qaAgentName,
+    role: 'qa', agentName: qaAgentName,
     toSectorId: 'DEV_ROOM',
     message: `Encaminhando ${bugId} para DEV`,
   });
   io.emit('agent:bubble', {
-    role: 'qa',
-    agentName: qaAgentName,
-    text: `Encaminhando para DEV...`,
-    type: 'handoff',
-    duration: 3000,
+    role: 'qa', agentName: qaAgentName,
+    text: `Encaminhando para DEV...`, type: 'handoff', duration: 3000,
   });
 
-  // Update channel status
   const channelInfo = activeChannels.get(channelId);
   if (channelInfo) channelInfo.status = 'dev';
 
-  // Trigger DEV pipeline
   await processDev(channelId, ticketId, qaReport, bugId, supportAgentId);
 }
 
@@ -773,10 +813,71 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
   const caseId = `CASE-${++caseCounter}`;
   emitLog(`${devAgentName} gerando caso ${caseId}...`);
   io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: 'investigating' });
+  io.emit('agent:bubble', {
+    role: 'dev', agentName: devAgentName,
+    text: `Gerando caso ${caseId}...`, type: 'processing', duration: 5000,
+  });
 
-  const devCase = await generateDevCase(devAgentName, DEV_PROMPT, qaReport, caseId);
+  // Step 1: Dev creates the case
+  let devCase = await generateDevCase(devAgentName, await buildPersonalizedPromptFull('dev', devAgentName), qaReport, caseId);
 
-  // Save case to DB
+  emitLog(`${devAgentName}: Caso pronto — enviando para ${devLeadName} revisar...`);
+  io.emit('agent:bubble', {
+    role: 'dev', agentName: devAgentName,
+    text: `Caso pronto! Enviando pro lead...`, type: 'handoff', duration: 3000,
+  });
+
+  // Step 2: Dev Lead reviews
+  io.emit('agent:working', { role: 'dev_lead', agentName: devLeadName, action: 'reviewing' });
+  io.emit('agent:bubble', {
+    role: 'dev_lead', agentName: devLeadName,
+    text: `Revisando ${caseId}...`, type: 'processing', duration: 6000,
+  });
+
+  const leadReview = await reviewDevCase(devLeadName, await buildPersonalizedPromptFull('dev_lead', devLeadName), devCase, caseId);
+
+  if (!leadReview.aprovado) {
+    // Step 3a: Lead rejected — Dev revises
+    emitLog(`${devLeadName}: Caso rejeitado — "${leadReview.feedback.slice(0, 80)}"`);
+    io.emit('agent:bubble', {
+      role: 'dev_lead', agentName: devLeadName,
+      text: `Precisa ajustar! ${leadReview.feedback.slice(0, 40)}...`, type: 'alert', duration: 5000,
+    });
+    io.emit('agent:bubble', {
+      role: 'dev', agentName: devAgentName,
+      text: `Entendido, revisando caso...`, type: 'processing', duration: 4000,
+    });
+
+    // Dev revises incorporating lead feedback
+    const revisedDevPrompt = buildPersonalizedPrompt('dev', devAgentName) +
+      `\n\nFEEDBACK DO DEV LEAD (${devLeadName}): ${leadReview.feedback}\nRevise o caso considerando este feedback. Riscos apontados: ${(leadReview.riscos_adicionais || []).join(', ')}`;
+    devCase = await generateDevCase(devAgentName, revisedDevPrompt, qaReport, caseId);
+
+    emitLog(`${devAgentName}: Caso revisado e enviado novamente`);
+    io.emit('agent:bubble', {
+      role: 'dev', agentName: devAgentName,
+      text: `Revisado! Reenviando...`, type: 'handoff', duration: 3000,
+    });
+    io.emit('agent:bubble', {
+      role: 'dev_lead', agentName: devLeadName,
+      text: `Caso aprovado ✓`, type: 'done', duration: 3000,
+    });
+    emitLog(`${devLeadName}: Revisão aceita ✓`);
+  } else {
+    // Step 3b: Lead approved on first try
+    emitLog(`${devLeadName}: Caso aprovado ✓`);
+    io.emit('agent:bubble', {
+      role: 'dev_lead', agentName: devLeadName,
+      text: `Caso aprovado! ✓`, type: 'done', duration: 3000,
+    });
+  }
+
+  // Merge lead observations into the case
+  if (leadReview.riscos_adicionais?.length) {
+    devCase.efeitos_colaterais = [...(devCase.efeitos_colaterais || []), ...leadReview.riscos_adicionais];
+  }
+
+  // Save approved case to DB
   await dbCreateCase({
     caso_id: devCase.caso_id || caseId,
     bug_id: bugId,
@@ -786,20 +887,20 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     prompt_ia: devCase.prompt_ia,
   });
 
-  // Save DEV's analysis
+  // Save DEV's internal analysis
   await dbSaveMessage({
     channel_id: `internal_dev`,
     ticket_id: ticketId,
     agent_id: 'dev',
     role: 'agent',
     author_name: devAgentName,
-    message: `Caso ${caseId} aberto: ${devCase.titulo}. Causa raiz: ${devCase.causa_raiz}`,
+    message: `Caso ${caseId} aprovado pelo Dev Lead. Título: ${devCase.titulo}. Causa raiz: ${devCase.causa_raiz}`,
     metadata: devCase as any,
   });
 
   // Notify user on Discord
   await sendDiscordMessage(channelId,
-    `🛠️ **${devAgentName} (DEV):** Caso **${caseId}** aberto para o bug ${bugId}.\n\n` +
+    `🛠️ **${devAgentName} (DEV):** Caso **${caseId}** aberto para o bug ${bugId} e aprovado pelo Tech Lead ${devLeadName}.\n\n` +
     `📝 **${devCase.titulo}**\n` +
     `🔍 Causa: ${devCase.causa_raiz?.slice(0, 200) || 'Em análise'}...\n\n` +
     `Nossa equipe vai trabalhar na correção. Você será notificado quando estiver resolvido!`
@@ -810,22 +911,33 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     agent_id: 'dev',
     role: 'agent',
     author_name: devAgentName,
-    message: `Caso ${caseId} aberto. Título: ${devCase.titulo}`,
+    message: `Caso ${caseId} aberto e aprovado pelo Dev Lead. Título: ${devCase.titulo}`,
   });
 
   io.emit('case:opened', devCase);
-  emitLog(`${devAgentName}: Caso ${caseId} aberto - ${devCase.titulo}`);
+  emitLog(`DEV pipeline concluído — caso ${caseId}: ${devCase.titulo}`);
 
-  // Emit visual event: DEV agent bubble
   io.emit('agent:bubble', {
-    role: 'dev',
-    agentName: devAgentName,
-    text: `Caso ${caseId} criado!`,
-    type: 'done',
-    duration: 4000,
+    role: 'dev', agentName: devAgentName,
+    text: `Caso ${caseId} criado!`, type: 'done', duration: 4000,
   });
 
-  // Free the support agent that originally handled this ticket
+  // Skill evolution: generate learning for DEV and Dev Lead (fire-and-forget)
+  void (async () => {
+    const taskSummary = `Caso ${caseId} (${bugId}) criado: "${devCase.titulo}". Causa raiz: ${devCase.causa_raiz?.slice(0, 200)}. Arquivos alterados: ${(devCase.arquivos_alterar || []).map((a: any) => a.arquivo).join(', ')}.`;
+    const [devCount, leadCount] = await Promise.all([
+      dbIncrementTasksCompleted(devAgentName),
+      dbIncrementTasksCompleted(devLeadName),
+    ]);
+    const [devInsight, leadInsight] = await Promise.all([
+      generateLearningInsight(devAgentName, 'dev', taskSummary, devCount),
+      generateLearningInsight(devLeadName, 'dev_lead', `Revisão do caso ${caseId}. Riscos apontados: ${(leadReview.riscos_adicionais || []).join(', ') || 'nenhum'}. Observações: ${leadReview.observacoes || 'nenhuma'}.`, leadCount),
+    ]);
+    if (devInsight) await dbAddLearning({ agent_name: devAgentName, role: 'dev', learning: devInsight, task_context: caseId, tasks_completed_at: devCount });
+    if (leadInsight) await dbAddLearning({ agent_name: devLeadName, role: 'dev_lead', learning: leadInsight, task_context: caseId, tasks_completed_at: leadCount });
+    emitLog(`📈 ${devAgentName} e ${devLeadName} evoluíram suas skills (${devCount} e ${leadCount} tarefas)`);
+  })();
+
   freeAgent(supportAgentId);
 }
 
@@ -909,41 +1021,52 @@ io.on('connection', (socket) => {
   });
 
   // Agent hired: register + persist to DB + auto-assign from queue
-  socket.on('agent:hired', async (data: { id: string; name: string; role?: string; position_x?: number; position_y?: number; sprite_index?: number }) => {
-    let agent = supportAgents.find(a => a.id === data.id);
-    if (!agent) {
-      agent = {
-        id: data.id,
-        name: data.name,
-        busy: false,
-        currentChannelId: null,
-      };
-      supportAgents.push(agent);
-      emitLog(`Novo agente contratado: ${data.name}`);
+  socket.on('agent:hired', async (data: { id: string; name: string; role?: string; personality?: string; position_x?: number; position_y?: number; sprite_index?: number }) => {
+    const role = data.role || 'suporte';
+
+    // Store personality for this agent (use provided or generate a new one)
+    const personality = data.personality || generatePersonality();
+    agentPersonalities.set(data.name, personality);
+
+    // Update fixed agent names if a senior role is being registered
+    if (role === 'qa_manager') qaManagerName = data.name;
+    if (role === 'dev_lead') devLeadName = data.name;
+    if (role === 'qa') qaAgentName = data.name;
+    if (role === 'dev') devAgentName = data.name;
+    if (role === 'log_analyzer') logAgentName = data.name;
+    if (role === 'ceo') ceoAgentName = data.name;
+
+    // Only track support agents in the in-memory roster (for ticket routing)
+    if (role === 'suporte') {
+      let agent = supportAgents.find(a => a.id === data.id);
+      if (!agent) {
+        agent = { id: data.id, name: data.name, busy: false, currentChannelId: null };
+        supportAgents.push(agent);
+        emitLog(`Novo agente contratado: ${data.name} (${role}) — Personalidade: ${personality}`);
+      } else {
+        agent.name = data.name;
+        agent.busy = false;
+        agent.currentChannelId = null;
+      }
+      io.emit('agents:list', supportAgents);
+      if (ticketQueue.length > 0 && !agent.busy) {
+        assignFromQueue(agent);
+      }
     } else {
-      agent.name = data.name;
-      agent.busy = false;
-      agent.currentChannelId = null;
+      emitLog(`Novo agente contratado: ${data.name} (${role}) — Personalidade: ${personality}`);
     }
 
     // Persist to Supabase
     try {
       await dbCreateAgent({
         name: data.name,
-        type: data.role || 'suporte',
+        type: role,
         system_prompt: '',
-        personality: '',
+        personality,
         specialization: '',
       });
     } catch (e) {
       console.error('Failed to persist agent to DB:', e);
-    }
-
-    io.emit('agents:list', supportAgents);
-
-    // Auto-assign from queue if there are pending tickets
-    if (ticketQueue.length > 0 && !agent.busy) {
-      assignFromQueue(agent);
     }
   });
 

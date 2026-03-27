@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AgentRole } from '../types/agents';
 import type { AgentProfile } from '../types/agentProfile';
-import { DEFAULT_PROMPTS, DEFAULT_PERSONALITIES, DEFAULT_SPECIALIZATIONS } from '../types/agentProfile';
+import { DEFAULT_PROMPTS, DEFAULT_PERSONALITIES, DEFAULT_SPECIALIZATIONS, generateAgentPersonality, parsePersonalityBehavior } from '../types/agentProfile';
 import type { OfficeState } from '../engine/officeState';
 import type { Socket } from 'socket.io-client';
 
@@ -196,11 +196,13 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   hireAgent: (role) => {
     const os = get().officeState;
     if (!os) return;
-    const ch = os.addAgent(role);
+    const personality = generateAgentPersonality();
+    const behavior = parsePersonalityBehavior(personality);
+    const ch = os.addAgent(role, behavior);
     if (ch) {
       const socket = get().socket;
       if (ch && socket) {
-        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role });
+        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role, personality });
       }
       get().addLogEntry(`${ch.name} (${role}) contratado(a)!`);
       get().syncAgents();

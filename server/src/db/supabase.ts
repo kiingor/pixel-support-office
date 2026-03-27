@@ -223,3 +223,55 @@ export async function dbUpdateAgent(id: string, updates: Record<string, unknown>
     .eq('id', id);
   if (error) console.error('dbUpdateAgent error:', error);
 }
+
+// Agent skill learnings
+const MAX_LEARNINGS_PER_AGENT = 10;
+
+export async function dbAddLearning(learning: {
+  agent_name: string;
+  role: string;
+  learning: string;
+  task_context: string;
+  tasks_completed_at: number;
+}) {
+  // Insert new learning
+  const { error } = await supabase.from('agent_learnings').insert(learning);
+  if (error) { console.error('dbAddLearning error:', error); return; }
+
+  // Enforce max: delete oldest if over limit
+  const { data: all } = await supabase
+    .from('agent_learnings')
+    .select('id, created_at')
+    .eq('agent_name', learning.agent_name)
+    .order('created_at', { ascending: false });
+
+  if (all && all.length > MAX_LEARNINGS_PER_AGENT) {
+    const toDelete = all.slice(MAX_LEARNINGS_PER_AGENT).map((r: { id: string }) => r.id);
+    await supabase.from('agent_learnings').delete().in('id', toDelete);
+  }
+}
+
+export async function dbGetLearnings(agentName: string): Promise<Array<{ learning: string; tasks_completed_at: number; created_at: string }>> {
+  const { data, error } = await supabase
+    .from('agent_learnings')
+    .select('learning, tasks_completed_at, created_at')
+    .eq('agent_name', agentName)
+    .order('created_at', { ascending: true });
+  if (error) console.error('dbGetLearnings error:', error);
+  return data || [];
+}
+
+export async function dbIncrementTasksCompleted(agentName: string): Promise<number> {
+  // Fetch current count first
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, tasks_completed')
+    .eq('name', agentName)
+    .is('fired_at', null)
+    .single();
+
+  if (!agent) return 0;
+  const newCount = (agent.tasks_completed || 0) + 1;
+  await supabase.from('agents').update({ tasks_completed: newCount }).eq('id', agent.id);
+  return newCount;
+}

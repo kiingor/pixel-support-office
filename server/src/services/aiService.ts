@@ -48,6 +48,20 @@ export interface DevCase {
   prompt_ia: string;
 }
 
+export interface QAReviewResult {
+  aprovado: boolean;
+  feedback: string;
+  gravidade_final: string;
+  observacoes: string;
+}
+
+export interface DevReviewResult {
+  aprovado: boolean;
+  feedback: string;
+  riscos_adicionais: string[];
+  observacoes: string;
+}
+
 // Support agent: classify ticket and respond
 export async function classifyTicket(
   agentName: string,
@@ -224,6 +238,72 @@ ${codeContext}`;
   }
 }
 
+// QA Manager: review QA analysis before escalating to DEV
+export async function reviewQA(
+  managerName: string,
+  systemPrompt: string,
+  qaReport: QAReport,
+  bugId: string,
+): Promise<QAReviewResult> {
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 2048,
+      system: systemPrompt.replace('{AGENT_NAME}', managerName),
+      messages: [{
+        role: 'user',
+        content: `Revise esta análise de QA feita pelo seu time:\n\n${JSON.stringify(qaReport, null, 2)}\n\nBug ID: ${bugId}`,
+      }],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]) as QAReviewResult;
+      } catch { /* fallback */ }
+    }
+
+    return { aprovado: true, feedback: text, gravidade_final: qaReport.gravidade, observacoes: '' };
+  } catch (error) {
+    console.error('AI reviewQA error:', error);
+    return { aprovado: true, feedback: 'Aprovado sem revisão (erro no serviço)', gravidade_final: qaReport.gravidade, observacoes: '' };
+  }
+}
+
+// Dev Lead: review dev case before saving to DB
+export async function reviewDevCase(
+  leadName: string,
+  systemPrompt: string,
+  devCase: DevCase,
+  caseId: string,
+): Promise<DevReviewResult> {
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 2048,
+      system: systemPrompt.replace('{AGENT_NAME}', leadName),
+      messages: [{
+        role: 'user',
+        content: `Revise este caso criado pelo dev:\n\n${JSON.stringify(devCase, null, 2)}\n\nCase ID: ${caseId}`,
+      }],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]) as DevReviewResult;
+      } catch { /* fallback */ }
+    }
+
+    return { aprovado: true, feedback: text, riscos_adicionais: [], observacoes: '' };
+  } catch (error) {
+    console.error('AI reviewDevCase error:', error);
+    return { aprovado: true, feedback: 'Aprovado sem revisão (erro no serviço)', riscos_adicionais: [], observacoes: '' };
+  }
+}
+
 // Log analyzer: analyze system logs
 export async function analyzeLogs(
   agentName: string,
@@ -280,3 +360,47 @@ export async function chatWithAgent(
     return 'Desculpe, estou com dificuldades técnicas no momento.';
   }
 }
+
+/**
+ * Generate a single skill learning insight after a completed task.
+ * Returns 1-2 sentences describing what the agent "learned" from this specific case.
+ * Uses a fast, cheap call — haiku-class token budget.
+ */
+export async function generateLearningInsight(
+  agentName: string,
+  role: string,
+  taskSummary: string,
+  tasksCompleted: number,
+): Promise<string> {
+  const levelLabel = tasksCompleted < 5 ? 'Júnior'
+    : tasksCompleted < 20 ? 'Pleno'
+    : tasksCompleted < 50 ? 'Sênior'
+    : 'Especialista';
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 150,
+      system: `Você é um sistema de registro de aprendizado de agentes de IA.
+Seu único trabalho é extrair UM insight específico e concreto que o agente "${agentName}" (${role}, nível ${levelLabel}) acabou de aprender ao concluir uma tarefa.
+O insight deve ser:
+- 1 a 2 frases no máximo
+- Específico (não genérico como "aprendi a me comunicar melhor")
+- Em primeira pessoa do agente (ex: "Aprendi que...", "Percebi que...", "Quando X acontece, Y é a melhor abordagem")
+- Acionável — algo que mudará como o agente age no futuro
+- Em português brasileiro
+Responda APENAS com o texto do insight, sem JSON, sem rodeios.`,
+      messages: [{
+        role: 'user',
+        content: `Resumo da tarefa concluída:\n${taskSummary}\n\nQual foi o principal aprendizado desta tarefa?`,
+      }],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+    return text || '';
+  } catch (error) {
+    console.error('generateLearningInsight error:', error);
+    return '';
+  }
+}
+
