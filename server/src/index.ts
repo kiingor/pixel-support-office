@@ -415,24 +415,51 @@ app.post('/api/cases/:casoId/resolve', async (req, res) => {
   // Find the original channel and notify user
   const cases = await dbGetCases();
   const theCase = cases.find((c: any) => c.caso_id === casoId);
-  if (theCase?.bug_id) {
-    // Find ticket with this bug_id in metadata
-    for (const [channelId, info] of activeChannels) {
-      if (info.status !== 'done') {
-        await sendDiscordMessage(channelId,
-          `✅ **Caso ${casoId} Resolvido!**\n\nO problema "${theCase.titulo}" foi analisado e corrigido pela nossa equipe de desenvolvimento. Se precisar de mais alguma coisa, é só nos chamar!`
-        );
-        info.status = 'done';
 
-        // Free the support agent that was handling this channel
-        freeAgent(info.agentId);
-        break;
+  if (theCase) {
+    // Build detailed resolution message
+    const createdAt = theCase.created_at
+      ? new Date(theCase.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+      : 'N/A';
+    const resolvedAt = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+    const resolutionMsg = [
+      `✅ **Caso ${casoId} Resolvido!**`,
+      ``,
+      `📋 **Caso:** ${theCase.titulo}`,
+      theCase.bug_id ? `🐛 **Bug:** ${theCase.bug_id}` : '',
+      `📅 **Aberto em:** ${createdAt}`,
+      `✔️ **Resolvido em:** ${resolvedAt}`,
+      ``,
+      `O problema foi analisado e corrigido pela nossa equipe. Se precisar de mais alguma coisa, é só nos chamar!`,
+    ].filter(Boolean).join('\n');
+
+    // Notify via Discord
+    if (theCase.bug_id) {
+      for (const [channelId, info] of activeChannels) {
+        if (info.status !== 'done') {
+          await sendDiscordMessage(channelId, resolutionMsg);
+          info.status = 'done';
+          freeAgent(info.agentId);
+          break;
+        }
       }
     }
+
+    // Also emit to all connected clients so the UI can show it
+    io.emit('case:resolved', {
+      casoId,
+      titulo: theCase.titulo,
+      bugId: theCase.bug_id,
+      createdAt,
+      resolvedAt,
+    });
+    emitLog(`Caso ${casoId} resolvido - "${theCase.titulo}" (aberto: ${createdAt})`);
+  } else {
+    io.emit('case:resolved', { casoId });
+    emitLog(`Caso ${casoId} marcado como resolvido`);
   }
 
-  io.emit('case:resolved', { casoId });
-  emitLog(`Caso ${casoId} marcado como resolvido`);
   res.json({ success: true });
 });
 

@@ -92,9 +92,14 @@ export function useWebSocket() {
       store.addLogEntry(`Caso ${devCase.caso_id} aberto: ${devCase.titulo}`);
     });
 
-    socket.on('case:resolved', (data) => {
-      useOfficeStore.getState().updateCase(data.casoId, { status: 'resolved' });
-      useOfficeStore.getState().addLogEntry(`Caso ${data.casoId} resolvido!`);
+    socket.on('case:resolved', (data: { casoId: string; titulo?: string; bugId?: string; createdAt?: string; resolvedAt?: string }) => {
+      const store = useOfficeStore.getState();
+      store.updateCase(data.casoId, { status: 'resolved' });
+      if (data.titulo) {
+        store.addLogEntry(`Caso ${data.casoId} resolvido - "${data.titulo}" (aberto: ${data.createdAt})`);
+      } else {
+        store.addLogEntry(`Caso ${data.casoId} resolvido!`);
+      }
     });
 
     // Discord messages (show in logs)
