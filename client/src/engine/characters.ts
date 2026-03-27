@@ -7,10 +7,18 @@ import { findPath, findPathNear, isWalkable } from './pathfinding';
 import type { TileType } from '../types/office';
 import type { PersonalityBehavior } from '../types/agentProfile';
 
-let nextId = 0;
 const usedNames: Record<AgentRole, number> = {
   ceo: 0, suporte: 0, qa: 0, qa_manager: 0, dev: 0, dev_lead: 0, log_analyzer: 0,
 };
+
+// Names that map to female sprites (derived from AGENT_NAMES female entries)
+const FEMALE_NAMES = new Set([
+  'Ana', 'Carla', 'Elena',           // suporte
+  'Marina', 'Patricia',               // qa
+  'Beatriz',                          // qa_manager
+  'Julia', 'Fernanda',                // dev
+  'Camila',                           // dev_lead
+]);
 
 const DEFAULT_BEHAVIOR: PersonalityBehavior = {
   walkSpeed: 48,
@@ -33,9 +41,12 @@ export function createCharacter(
   const nameIdx = usedNames[role] % nameList.length;
   usedNames[role]++;
 
+  const name = nameList[nameIdx];
+  const gender: 'male' | 'female' = FEMALE_NAMES.has(name) ? 'female' : 'male';
+
   return {
-    id: `agent_${nextId++}`,
-    name: nameList[nameIdx],
+    id: crypto.randomUUID(),
+    name,
     role,
     state: CharacterState.IDLE,
     direction: Direction.DOWN,
@@ -49,7 +60,7 @@ export function createCharacter(
     sectorId,
     animFrame: 0,
     animTimer: 0,
-    sprites: getCharacterSprites(role),
+    sprites: getCharacterSprites(role, gender),
     currentTaskId: null,
     targetSectorId: null,
     bubbles: [],
@@ -109,7 +120,7 @@ export function updateCharacter(
       updateIdleBehaviors(ch, dt, tiles, blockedTiles, true);
       break;
     case CharacterState.TYPE:
-      updateIdleBehaviors(ch, dt, tiles, blockedTiles, false);
+      updateIdleBehaviors(ch, dt, tiles, blockedTiles, false, false);
       break;
     case CharacterState.TALK:
       // Just animate in place
@@ -166,13 +177,16 @@ function updateIdleBehaviors(
   tiles: TileType[][],
   blockedTiles: Set<string>,
   allowWander: boolean,
+  allowTurn: boolean = true,
 ): void {
-  // 1. Sitting direction change
-  ch.idleTurnTimer += dt;
-  if (ch.idleTurnTimer >= ch.idleTurnInterval) {
-    ch.idleTurnTimer = 0;
-    const idx = (DIRECTIONS.indexOf(ch.direction) + 1) % DIRECTIONS.length;
-    ch.direction = DIRECTIONS[idx];
+  // 1. Sitting direction change (disabled while typing at desk)
+  if (allowTurn) {
+    ch.idleTurnTimer += dt;
+    if (ch.idleTurnTimer >= ch.idleTurnInterval) {
+      ch.idleTurnTimer = 0;
+      const idx = (DIRECTIONS.indexOf(ch.direction) + 1) % DIRECTIONS.length;
+      ch.direction = DIRECTIONS[idx];
+    }
   }
 
   // 2. Random quirk bubble (only when no active bubbles)

@@ -13,15 +13,17 @@ export function setLoadedCharacters(chars: CharacterDirectionSprites[]): void {
   spriteCache.clear(); // Clear cache when assets reload
 }
 
-// Which base character (0-5) to use per role
-const ROLE_CHAR_INDEX: Record<AgentRole, number> = {
-  ceo: 0,
-  suporte: 1,
-  qa: 2,
-  qa_manager: 2,
-  dev: 3,
-  dev_lead: 3,
-  log_analyzer: 4,
+// Which base character (0-5) to use per role, split by gender
+// Male sprites: char_0 (dark skin jacket), char_2 (dark hoodie), char_3 (light skin), char_5 (red outfit)
+// Female sprites: char_1 (braided hair), char_4 (brown hair)
+const ROLE_CHAR_INDEX: Record<AgentRole, { male: number; female: number }> = {
+  ceo:          { male: 0, female: 4 },
+  suporte:      { male: 2, female: 1 },
+  qa:           { male: 3, female: 4 },
+  qa_manager:   { male: 5, female: 1 },
+  dev:          { male: 5, female: 4 },
+  dev_lead:     { male: 3, female: 1 },
+  log_analyzer: { male: 0, female: 1 },
 };
 
 // Optional hue shifts per role for extra distinction
@@ -85,13 +87,14 @@ function buildSpritesFromSheet(sheet: CharacterDirectionSprites, hueShift: numbe
   };
 }
 
-const spriteCache = new Map<AgentRole, CharacterSprites>();
+const spriteCache = new Map<string, CharacterSprites>();
 
-export function getCharacterSprites(role: AgentRole): CharacterSprites {
-  const cached = spriteCache.get(role);
+export function getCharacterSprites(role: AgentRole, gender: 'male' | 'female' = 'male'): CharacterSprites {
+  const cacheKey = `${role}_${gender}`;
+  const cached = spriteCache.get(cacheKey);
   if (cached) return cached;
 
-  const charIndex = ROLE_CHAR_INDEX[role] % loadedCharacters.length;
+  const charIndex = ROLE_CHAR_INDEX[role][gender] % loadedCharacters.length;
   const sheet = loadedCharacters[charIndex];
 
   if (!sheet) {
@@ -109,6 +112,6 @@ export function getCharacterSprites(role: AgentRole): CharacterSprites {
 
   const hueShift = ROLE_HUE_SHIFT[role];
   const sprites = buildSpritesFromSheet(sheet, hueShift);
-  spriteCache.set(role, sprites);
+  spriteCache.set(cacheKey, sprites);
   return sprites;
 }

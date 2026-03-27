@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-import { buildCodeContextForBug, searchCode, getProjectStructure } from './codeAnalysis.js';
+import { buildCodeContextForBug, searchCode, getProjectStructure, syncRepo } from './codeAnalysis.js';
 
 // Try multiple .env paths since working dir varies
 dotenv.config({ path: '.env' });
@@ -11,8 +11,10 @@ dotenv.config({ path: '../../.env' });
 // Claude — skill execution (deep technical tasks)
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+  maxRetries: 3, // auto-retry on 529 overloaded with exponential backoff
 });
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'claude-sonnet-4-6';
+
 
 // Google Gemini — thinking layer (chat, bubbles, meetings, personality)
 const openrouter = new OpenAI({
@@ -119,6 +121,9 @@ export async function analyzeQA(
   bugId: string,
 ): Promise<QAReport> {
   try {
+    // Sync latest SoftcomHub code before analysis
+    await syncRepo();
+
     // Build code context from the actual project
     const codeContext = buildCodeContextForBug(bugReport, 6000);
 
@@ -339,7 +344,68 @@ export async function analyzeLogs(
   }
 }
 
-// Generic chat with any agent — uses OpenRouter (personality/thinking layer), falls back to Claude
+export interface Attachment {
+  url: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  name: string;
+}
+
+/**
+ * Support agent chat — always uses Claude (main model).
+ * Injects real SoftcomHub code context and supports image attachments via Claude vision.
+ */
+export async function supportChat(
+  agentName: string,
+  systemPrompt: string,
+  userMessage: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  attachments: Attachment[] = [],
+): Promise<string> {
+  // Inject relevant SoftcomHub code context
+  const codeContext = buildCodeContextForBug(userMessage, 3000);
+  const enhancedSystem = systemPrompt.replace('{AGENT_NAME}', agentName) + `
+
+## Código Fonte Real do SoftcomHub
+Use os trechos abaixo para responder com precisão — entenda o sistema pelo código real, não só pela documentação.
+${codeContext}`;
+
+  // Build user message content — text + optional images (Claude vision)
+  type ContentBlock =
+    | { type: 'text'; text: string }
+    | { type: 'image'; source: { type: 'url'; url: string } };
+
+  const userContent: ContentBlock[] = [{ type: 'text', text: userMessage }];
+
+  const imageAttachments = attachments.filter(a => a.type === 'image');
+  const otherAttachments = attachments.filter(a => a.type !== 'image');
+
+  for (const img of imageAttachments) {
+    userContent.push({ type: 'image', source: { type: 'url', url: img.url } });
+  }
+
+  if (otherAttachments.length > 0) {
+    const fileList = otherAttachments.map(a => `[${a.type.toUpperCase()}] ${a.name}: ${a.url}`).join('\n');
+    userContent.push({ type: 'text', text: `\nArquivos enviados:\n${fileList}` });
+  }
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system: enhancedSystem,
+      messages: [
+        ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: userContent.length === 1 ? userMessage : userContent },
+      ],
+    });
+    return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
+  } catch (error) {
+    console.error('AI supportChat error:', error);
+    return 'Desculpe, estou com dificuldades técnicas no momento.';
+  }
+}
+
+// Generic chat with any agent — uses Gemini (personality/thinking layer), falls back to Claude
 export async function chatWithAgent(
   agentName: string,
   systemPrompt: string,

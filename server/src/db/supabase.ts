@@ -27,6 +27,7 @@ export async function initDatabase() {
 
 // Agent CRUD
 export async function dbCreateAgent(agent: {
+  id: string;
   name: string;
   type: string;
   system_prompt: string;
@@ -35,7 +36,7 @@ export async function dbCreateAgent(agent: {
 }) {
   const { data, error } = await supabase
     .from('agents')
-    .insert(agent)
+    .upsert(agent, { onConflict: 'id' })
     .select()
     .single();
   if (error) console.error('dbCreateAgent error:', error);

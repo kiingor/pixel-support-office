@@ -14,8 +14,8 @@ import {
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   supabase,
 } from './db/supabase.js';
-import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent, generateBubble, reviewQA, reviewDevCase, generateLearningInsight } from './services/aiService.js';
-import { initDiscord, sendDiscordMessage } from './services/discord.js';
+import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent, supportChat, generateBubble, reviewQA, reviewDevCase, generateLearningInsight } from './services/aiService.js';
+import { initDiscord, sendDiscordMessage, type DiscordAttachment } from './services/discord.js';
 import { syncRepo, getProjectStructure } from './services/codeAnalysis.js';
 import { SOFTCOMHUB_KNOWLEDGE } from './data/softcomhub-knowledge.js';
 import { buildAgentPrompt } from './data/skills-loader.js';
@@ -487,16 +487,16 @@ app.get('/api/agents', async (_, res) => {
 // --- DISCORD MESSAGE HANDLER ---
 // This is the core: every Discord message goes through here
 
-async function handleDiscordMessage(author: string, content: string, channelId: string, assignedAgent?: SupportAgent) {
+async function handleDiscordMessage(author: string, content: string, channelId: string, assignedAgent?: SupportAgent, attachments: DiscordAttachment[] = []) {
   // Note: message is saved inside handleSupportMessage to avoid duplicates
-  io.emit('discord:message', { author, content, channelId });
+  io.emit('discord:message', { author, content, channelId, attachments });
 
   // Check if there's an active ticket for this channel
   const active = activeChannels.get(channelId);
 
   if (active && active.status === 'collecting') {
     // Continue collecting info for existing ticket
-    await handleSupportMessage(channelId, author, content, active.ticketId, active.agentId);
+    await handleSupportMessage(channelId, author, content, active.ticketId, active.agentId, attachments);
   } else if (!active) {
     // New conversation - find or use assigned agent
     let agent = assignedAgent || findIdleAgent();
@@ -525,7 +525,7 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
 
     if (ticket) {
       io.emit('ticket:new', ticket);
-      await handleSupportMessage(channelId, author, content, ticket.id, agent.id);
+      await handleSupportMessage(channelId, author, content, ticket.id, agent.id, attachments);
     }
   }
   // If status is processing/qa/dev, ignore (agent is working)
@@ -533,7 +533,7 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
 
 // --- SUPPORT AGENT ---
 
-async function handleSupportMessage(channelId: string, author: string, message: string, ticketId: string, agentId?: string) {
+async function handleSupportMessage(channelId: string, author: string, message: string, ticketId: string, agentId?: string, attachments: DiscordAttachment[] = []) {
   // Save user message to memory and DB
   addToMemory(channelId, 'user', `${author}: ${message}`);
   await dbSaveMessage({ channel_id: channelId, role: 'user', author_name: author, message });
@@ -574,12 +574,13 @@ async function handleSupportMessage(channelId: string, author: string, message: 
     duration: 4000,
   });
 
-  // Call AI with full conversation context
-  const aiResponse = await chatWithAgent(
+  // Call AI with full conversation context — always uses Claude (main model) for support
+  const aiResponse = await supportChat(
     agentName,
     buildPersonalizedPrompt('suporte', agentName),
     message,
     conversationContext,
+    attachments,
   );
 
   // Check if AI wants to escalate (returns JSON with acao: "escalar_qa")
@@ -1021,9 +1022,10 @@ io.on('connection', (socket) => {
       emitLog(`Novo agente contratado: ${data.name} (${role}) — Personalidade: ${personality}`);
     }
 
-    // Persist to Supabase
+    // Persist to Supabase using the client-generated UUID so fire/hire stay in sync
     try {
       await dbCreateAgent({
+        id: data.id,
         name: data.name,
         type: role,
         system_prompt: '',
@@ -1425,8 +1427,8 @@ async function start() {
     }
   }
 
-  const discordOk = await initDiscord((author, content, channelId) => {
-    handleDiscordMessage(author, content, channelId);
+  const discordOk = await initDiscord((author, content, channelId, attachments) => {
+    handleDiscordMessage(author, content, channelId, undefined, attachments);
   });
   if (!discordOk) console.warn('Discord bot not connected.');
 

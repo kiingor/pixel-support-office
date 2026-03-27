@@ -5,7 +5,13 @@ dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
 dotenv.config({ path: '../../.env' });
 
-type MessageHandler = (author: string, content: string, channelId: string) => void;
+export interface DiscordAttachment {
+  url: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  name: string;
+}
+
+type MessageHandler = (author: string, content: string, channelId: string, attachments: DiscordAttachment[]) => void;
 
 let discordClient: Client | null = null;
 let messageHandler: MessageHandler | null = null;
@@ -42,10 +48,26 @@ export async function initDiscord(onMessage: MessageHandler): Promise<boolean> {
     const content = message.content;
     const channelId = message.channelId;
 
-    console.log(`[Discord] Message from ${author}: ${content.slice(0, 80)}`);
+    // Parse attachments (images, videos, audio, documents)
+    const attachments: DiscordAttachment[] = message.attachments.map(att => {
+      const ct = att.contentType ?? '';
+      let type: DiscordAttachment['type'] = 'document';
+      if (ct.startsWith('image/')) type = 'image';
+      else if (ct.startsWith('video/')) type = 'video';
+      else if (ct.startsWith('audio/')) type = 'audio';
+      return { url: att.url, type, name: att.name ?? att.id };
+    });
+
+    // Guard: if content is empty and no attachments, MessageContent intent is likely disabled
+    if (!content && attachments.length === 0) {
+      console.warn(`[Discord] ⚠️ Mensagem de ${author} chegou com content vazio e sem anexos. Verifique se o "Message Content Intent" está ativo no Developer Portal.`);
+      return;
+    }
+
+    console.log(`[Discord] Message from ${author}: ${content.slice(0, 80)}${attachments.length ? ` [+${attachments.length} arquivo(s)]` : ''}`);
 
     if (messageHandler) {
-      messageHandler(author, content, channelId);
+      messageHandler(author, content, channelId, attachments);
     }
   });
 
