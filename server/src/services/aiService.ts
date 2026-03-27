@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { buildCodeContextForBug, searchCode, getProjectStructure } from './codeAnalysis.js';
 
@@ -7,11 +8,22 @@ dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
 dotenv.config({ path: '../../.env' });
 
+// Claude — skill execution (deep technical tasks)
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
-
 const MODEL = 'claude-sonnet-4-20250514';
+
+// OpenRouter — thinking layer (chat, bubbles, meetings, personality)
+const openrouter = new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  defaultHeaders: {
+    'HTTP-Referer': 'https://github.com/kiingor/pixel-support-office',
+    'X-Title': 'Pixel Support Office',
+  },
+});
+const THINKING_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
 
 export interface ClassificationResult {
   classificacao: 'duvida' | 'bug';
@@ -331,7 +343,7 @@ export async function analyzeLogs(
   }
 }
 
-// Generic chat with any agent
+// Generic chat with any agent — uses OpenRouter (personality/thinking layer)
 export async function chatWithAgent(
   agentName: string,
   systemPrompt: string,
@@ -339,25 +351,53 @@ export async function chatWithAgent(
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
 ): Promise<string> {
   try {
-    const messages = [
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
       ...conversationHistory.map(m => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
       })),
-      { role: 'user' as const, content: userMessage },
+      { role: 'user', content: userMessage },
     ];
 
-    const response = await client.messages.create({
-      model: MODEL,
+    const response = await openrouter.chat.completions.create({
+      model: THINKING_MODEL,
       max_tokens: 1024,
-      system: systemPrompt.replace('{AGENT_NAME}', agentName),
       messages,
     });
 
-    return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
+    return response.choices[0]?.message?.content || 'Sem resposta.';
   } catch (error) {
     console.error('AI chatWithAgent error:', error);
     return 'Desculpe, estou com dificuldades técnicas no momento.';
+  }
+}
+
+// Generate a dynamic bubble text based on agent personality — uses OpenRouter
+export async function generateBubble(
+  agentName: string,
+  agentPersonality: string,
+  situation: string,
+): Promise<string> {
+  try {
+    const response = await openrouter.chat.completions.create({
+      model: THINKING_MODEL,
+      max_tokens: 60,
+      messages: [
+        {
+          role: 'system',
+          content: `Você é ${agentName}, um agente de suporte de TI com a seguinte personalidade: ${agentPersonality}.
+Gere UMA frase curta (máx 8 palavras) que este agente pensaria ou falaria em voz alta na situação dada.
+Seja fiel à personalidade. Responda APENAS a frase, sem aspas, sem explicação.
+Use português brasileiro informal.`,
+        },
+        { role: 'user', content: situation },
+      ],
+    });
+
+    return response.choices[0]?.message?.content?.trim() || situation;
+  } catch {
+    return situation; // fallback to the original text
   }
 }
 
