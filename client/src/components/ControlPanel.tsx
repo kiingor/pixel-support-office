@@ -3,6 +3,12 @@ import { useOfficeStore } from '../stores/officeStore';
 import { AgentChat } from './AgentChat';
 import { MeetingChat } from './MeetingChat';
 import type { AgentRole } from '../types/agents';
+import {
+  Menubar,
+  MenubarMenu,
+  MenubarTrigger,
+} from './ui/pixelact-ui/menubar';
+import { cn } from '@/lib/utils';
 
 const TABS = ['Equipe', 'Fila', 'Casos', 'Logs'] as const;
 
@@ -52,27 +58,23 @@ export function ControlPanel() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #0f3460' }}>
+      <Menubar className="w-full rounded-none border-0 border-b border-b-border h-auto p-0 space-x-0">
         {TABS.map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1,
-              padding: '8px 4px',
-              background: activeTab === tab ? '#1a1a5e' : 'transparent',
-              color: activeTab === tab ? '#e94560' : '#888',
-              border: 'none',
-              borderBottom: activeTab === tab ? '2px solid #e94560' : '2px solid transparent',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: activeTab === tab ? 'bold' : 'normal',
-            }}
-          >
-            {tab}
-          </button>
+          <MenubarMenu key={tab}>
+            <MenubarTrigger
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'flex-1 justify-center text-[10px] px-2 py-2 cursor-pointer',
+                activeTab === tab
+                  ? 'border-b-foreground text-accent-foreground'
+                  : 'text-muted-foreground border-b-transparent'
+              )}
+            >
+              {tab}
+            </MenubarTrigger>
+          </MenubarMenu>
         ))}
-      </div>
+      </Menubar>
 
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>

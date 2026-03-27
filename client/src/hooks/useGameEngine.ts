@@ -231,8 +231,8 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const furniture = officeState.getFurnitureAt(x, y);
+      const store = useOfficeStore.getState();
       if (furniture) {
-        const store = useOfficeStore.getState();
         store.setContextMenu({
           x: e.clientX,
           y: e.clientY,
@@ -243,6 +243,8 @@ export function useGameEngine(canvasRef: React.RefObject<HTMLCanvasElement | nul
             store.setContextMenu(null);
           },
         });
+      } else {
+        store.setContextMenu(null);
       }
     };
 
