@@ -47,6 +47,15 @@ const ticketQueue: Array<{ author: string; content: string; channelId: string }>
 // In-memory conversation history fallback (in case DB fails)
 const memoryConversations = new Map<string, Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>>();
 
+// Active meeting state (persists across client reconnects)
+interface MeetingState {
+  active: boolean;
+  topic: string;
+  participants: string[];
+  messages: Array<{ from: 'user' | 'agent'; agentName?: string; agentRole?: string; text: string; timestamp: number }>;
+}
+const activeMeeting: MeetingState = { active: false, topic: '', participants: [], messages: [] };
+
 function addToMemory(channelId: string, role: 'user' | 'assistant', content: string) {
   if (!memoryConversations.has(channelId)) {
     memoryConversations.set(channelId, []);
@@ -813,6 +822,15 @@ io.on('connection', (socket) => {
   socket.emit('agents:list', supportAgents);
   socket.emit('queue:updated', { size: ticketQueue.length });
 
+  // Restore active meeting if one is in progress
+  if (activeMeeting.active) {
+    socket.emit('meeting:restore', {
+      topic: activeMeeting.topic,
+      participants: activeMeeting.participants,
+      messages: activeMeeting.messages,
+    });
+  }
+
   // Send all active agents from DB (for frontend persistence/restore)
   dbGetActiveAgents().then(activeAgents => {
     socket.emit('agents:sync', { agents: activeAgents });
@@ -1067,11 +1085,19 @@ io.on('connection', (socket) => {
               });
             }
 
+            const meetingTopic = action.topic || 'Reunião geral';
+
+            // Save meeting state on server
+            activeMeeting.active = true;
+            activeMeeting.topic = meetingTopic;
+            activeMeeting.participants = participants;
+            activeMeeting.messages = [];
+
             io.emit('meeting:started', {
-              topic: action.topic || 'Reunião geral',
+              topic: meetingTopic,
               participants,
             });
-            emitLog(`CEO convocou reunião: ${action.topic || 'Reunião geral'}`);
+            emitLog(`CEO convocou reunião: ${meetingTopic}`);
           }
         }
       } catch (e) {
@@ -1099,6 +1125,18 @@ io.on('connection', (socket) => {
   socket.on('meeting:message', async (data: { message: string; topic: string; participants: string[]; targetAgent?: string }) => {
     const { message, topic, participants, targetAgent } = data;
 
+    // Save user message to meeting state
+    activeMeeting.messages.push({ from: 'user', text: message, timestamp: Date.now() });
+
+    // Also persist to DB
+    await dbSaveMessage({
+      channel_id: 'meeting_room',
+      agent_id: 'operator',
+      role: 'user',
+      author_name: 'Operador',
+      message,
+    });
+
     // Determine who should respond
     const respondents = targetAgent
       ? participants.filter(name => name.toLowerCase() === targetAgent.toLowerCase())
@@ -1119,6 +1157,19 @@ Outros presentes: ${participants.join(', ')}.`;
 
       try {
         const response = await chatWithAgent(agent.name, meetingContext, `O operador diz na reunião: ${message}`, []);
+
+        // Save agent response to meeting state
+        activeMeeting.messages.push({ from: 'agent', agentName: agent.name, agentRole: agent.role, text: response, timestamp: Date.now() });
+
+        // Persist to DB
+        await dbSaveMessage({
+          channel_id: 'meeting_room',
+          agent_id: agent.name,
+          role: 'agent',
+          author_name: agent.name,
+          message: response,
+        });
+
         socket.emit('meeting:response', { agentName: agent.name, role: agent.role, response });
         io.emit('agent:bubble', {
           agentName: agent.name,
@@ -1132,8 +1183,13 @@ Outros presentes: ${participants.join(', ')}.`;
     }
   });
 
-  // Meeting end: return all agents to their seats
+  // Meeting end: return all agents to their seats and clear state
   socket.on('meeting:end', () => {
+    activeMeeting.active = false;
+    activeMeeting.topic = '';
+    activeMeeting.participants = [];
+    activeMeeting.messages = [];
+
     const allAgents = getActiveAgentsList();
     for (const agent of allAgents) {
       io.emit('agent:return_to_seat', { agentName: agent.name });

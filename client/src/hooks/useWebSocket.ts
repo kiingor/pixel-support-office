@@ -240,6 +240,11 @@ export function useWebSocket() {
       useOfficeStore.getState().onMeetingResponse(data.agentName, data.role, data.response);
     });
 
+    // Restore meeting on reconnect/refresh
+    socket.on('meeting:restore', (data: { topic: string; participants: string[]; messages: Array<{ from: 'user' | 'agent'; agentName?: string; agentRole?: string; text: string; timestamp: number }> }) => {
+      useOfficeStore.getState().restoreMeeting(data.topic, data.participants, data.messages);
+    });
+
     // Agents sync from DB: restore agents in the office on reconnect
     socket.on('agents:sync', (data: { agents: Array<{ id: string; name: string; type: string }> }) => {
       const store = useOfficeStore.getState();

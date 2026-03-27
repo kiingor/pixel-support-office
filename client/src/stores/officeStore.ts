@@ -114,6 +114,7 @@ interface OfficeStoreState {
   setQueueSize: (size: number) => void;
   updateActiveConversation: (channelId: string, data: ActiveConversation) => void;
   startMeeting: (topic: string, participants: string[]) => void;
+  restoreMeeting: (topic: string, participants: string[], messages: Array<{ from: 'user' | 'agent'; agentName?: string; agentRole?: string; text: string; timestamp: number }>) => void;
   endMeeting: () => void;
   sendMeetingMessage: (text: string) => void;
   onMeetingResponse: (agentName: string, role: string, response: string) => void;
@@ -376,9 +377,29 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       meetingParticipants: participants,
       meetingMessages: [],
       meetingLoading: false,
-      chatAgentId: null, // Close any individual chat
+      chatAgentId: null,
     });
     get().addLogEntry(`Reunião iniciada: ${topic}`);
+  },
+
+  restoreMeeting: (topic, participants, messages) => {
+    const restored: MeetingMessage[] = messages.map((m, i) => ({
+      id: `restored_${i}`,
+      from: m.from,
+      agentName: m.agentName,
+      agentRole: m.agentRole,
+      text: m.text,
+      timestamp: m.timestamp,
+    }));
+    set({
+      meetingActive: true,
+      meetingTopic: topic,
+      meetingParticipants: participants,
+      meetingMessages: restored,
+      meetingLoading: false,
+      chatAgentId: null,
+    });
+    get().addLogEntry('Reunião restaurada');
   },
 
   endMeeting: () => {
