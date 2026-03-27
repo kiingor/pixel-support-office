@@ -343,61 +343,88 @@ export async function analyzeLogs(
   }
 }
 
-// Generic chat with any agent — uses OpenRouter (personality/thinking layer)
+// Generic chat with any agent — uses OpenRouter (personality/thinking layer), falls back to Claude
 export async function chatWithAgent(
   agentName: string,
   systemPrompt: string,
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
 ): Promise<string> {
-  try {
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
-      ...conversationHistory.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-      { role: 'user', content: userMessage },
-    ];
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
+    ...conversationHistory.map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+    { role: 'user', content: userMessage },
+  ];
 
+  // Try OpenRouter first
+  try {
     const response = await openrouter.chat.completions.create({
       model: THINKING_MODEL,
       max_tokens: 1024,
       messages,
     });
-
     return response.choices[0]?.message?.content || 'Sem resposta.';
+  } catch (error: any) {
+    const isRateLimit = error?.status === 429;
+    console.warn(`[OpenRouter] ${isRateLimit ? 'Rate limited' : 'Error'} — falling back to Claude`);
+  }
+
+  // Fallback to Claude
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system: systemPrompt.replace('{AGENT_NAME}', agentName),
+      messages: conversationHistory.map(m => ({ role: m.role, content: m.content }))
+        .concat([{ role: 'user', content: userMessage }]),
+    });
+    return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
   } catch (error) {
-    console.error('AI chatWithAgent error:', error);
+    console.error('AI chatWithAgent fallback error:', error);
     return 'Desculpe, estou com dificuldades técnicas no momento.';
   }
 }
 
-// Generate a dynamic bubble text based on agent personality — uses OpenRouter
+// Generate a dynamic bubble text based on agent personality — uses OpenRouter, falls back to Claude
 export async function generateBubble(
   agentName: string,
   agentPersonality: string,
   situation: string,
 ): Promise<string> {
+  const systemPrompt = `Você é ${agentName}, um agente de suporte de TI com a seguinte personalidade: ${agentPersonality}.
+Gere UMA frase curta (máx 8 palavras) que este agente pensaria ou falaria em voz alta na situação dada.
+Seja fiel à personalidade. Responda APENAS a frase, sem aspas, sem explicação.
+Use português brasileiro informal.`;
+
+  // Try OpenRouter first
   try {
     const response = await openrouter.chat.completions.create({
       model: THINKING_MODEL,
       max_tokens: 60,
       messages: [
-        {
-          role: 'system',
-          content: `Você é ${agentName}, um agente de suporte de TI com a seguinte personalidade: ${agentPersonality}.
-Gere UMA frase curta (máx 8 palavras) que este agente pensaria ou falaria em voz alta na situação dada.
-Seja fiel à personalidade. Responda APENAS a frase, sem aspas, sem explicação.
-Use português brasileiro informal.`,
-        },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: situation },
       ],
     });
-
     return response.choices[0]?.message?.content?.trim() || situation;
+  } catch (error: any) {
+    console.warn(`[OpenRouter] generateBubble ${error?.status === 429 ? 'rate limited' : 'error'} — falling back to Claude`);
+  }
+
+  // Fallback to Claude (haiku-budget call)
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 60,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: situation }],
+    });
+    return response.content[0].type === 'text' ? response.content[0].text.trim() : situation;
   } catch {
-    return situation; // fallback to the original text
+    return situation;
   }
 }
 
