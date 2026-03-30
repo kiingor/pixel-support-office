@@ -830,7 +830,13 @@ async function handleSupportMessage(channelId: string, author: string, message: 
 
 async function sendSupportResponse(channelId: string, ticketId: string, response: string, agentName: string, agentId: string) {
   // Clean any JSON from the response for Discord
-  const cleanResponse = response.replace(/```json[\s\S]*?```/g, '').replace(/\{[\s\S]*"acao"[\s\S]*\}/g, '').trim();
+  let cleanResponse = response.replace(/```json[\s\S]*?```/g, '').replace(/\{[\s\S]*"acao"[\s\S]*\}/g, '').trim();
+
+  // Remove duplicate agent name prefixes from AI response (AI sometimes adds "AgentName: " to its response)
+  const namePrefix = new RegExp(`^${agentName}:\\s*`, 'gi');
+  cleanResponse = cleanResponse.replace(namePrefix, '').trim();
+
+  console.log(`[Support] ${agentName} responding to ${channelId} (${cleanResponse.length} chars)`);
 
   // Save to memory and DB
   addToMemory(channelId, 'assistant', `${agentName}: ${cleanResponse}`);
