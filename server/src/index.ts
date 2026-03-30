@@ -1946,49 +1946,116 @@ async function pollErrorLogs(): Promise<void> {
       const agentName = idleAgents[i];
       const logGroup = logAnalysisQueue.shift()!;
       busyLogAgents.add(agentName);
-      analyzeErrorLogGroup(agentName, logGroup).finally(() => busyLogAgents.delete(agentName));
+      // Stagger assignments by 2s so each agent visually starts at different times
+      setTimeout(() => {
+        analyzeErrorLogGroup(agentName, logGroup).finally(() => busyLogAgents.delete(agentName));
+      }, i * 2000);
+    }
+    if (toProcess > 0) {
+      emitLog(`[Logs] ${toProcess} agente(s) receberam tarefas. Fila: ${logAnalysisQueue.length} restantes`);
     }
   } catch (err) { console.warn('[ErrorLogs] Poll error:', (err as Error).message); }
 }
 
 async function analyzeErrorLogGroup(agentName: string, group: ErrorLogGroup): Promise<void> {
   try {
-    emitLog(`${agentName} analisando log: ${group.rawLog.slice(0, 60)}... (${group.ocorrencias}x)`);
-    io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: 'analyzing' });
-    io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: `Analisando: ${group.tela}/${group.rota} (${group.ocorrencias}x)`, type: 'processing', duration: 8000 });
-    io.emit('ticket:new', { id: `log_${Date.now()}`, discord_author: `[LOG] ${agentName}`, discord_message: `${group.rawLog.slice(0, 80)}... (${group.ocorrencias}x)`, status: 'processing', classification: 'log_analysis', created_at: new Date().toISOString() });
+    const shortLog = group.rawLog.slice(0, 50).replace(/\n/g, ' ');
 
-    const result = await classifyExternalLog(agentName, buildPersonalizedPrompt('log_analyzer', agentName), {
-      log: group.rawLog, tela: group.tela, rota: group.rota, componente: group.componente,
-      usuarios: group.usuarios, ocorrencias: group.ocorrencias,
-      primeiraOcorrencia: new Date(group.primeiraOcorrencia).toLocaleString('pt-BR'),
-      ultimaOcorrencia: new Date(group.ultimaOcorrencia).toLocaleString('pt-BR'),
+    // 1. VISUAL: Show agent is working (direct text, no AI call)
+    emitLog(`${agentName} analisando: ${shortLog}... (${group.ocorrencias}x, ${group.usuarios.length} usr)`);
+    io.emit('agent:bubble', {
+      agentName, role: 'log_analyzer',
+      text: `${group.tela} ${group.rota} (${group.ocorrencias}x)`,
+      type: 'processing', duration: 10000,
     });
+    io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: 'analyzing' });
 
+    // 2. AI Classification (with graceful fallback if AI fails)
+    let result: { classification: string; titulo: string; descricao: string; prioridade: string };
+    try {
+      result = await classifyExternalLog(agentName, buildPersonalizedPrompt('log_analyzer', agentName), {
+        log: group.rawLog, tela: group.tela, rota: group.rota, componente: group.componente,
+        usuarios: group.usuarios, ocorrencias: group.ocorrencias,
+        primeiraOcorrencia: new Date(group.primeiraOcorrencia).toLocaleString('pt-BR'),
+        ultimaOcorrencia: new Date(group.ultimaOcorrencia).toLocaleString('pt-BR'),
+      });
+    } catch {
+      // AI failed — classify based on heuristics
+      const logLower = group.rawLog.toLowerCase();
+      const isKnown = logLower.includes('resizeobserver') || logLower.includes('extension context');
+      result = {
+        classification: isKnown ? 'known_issue' : 'real_error',
+        titulo: `${group.tela}: ${shortLog}`,
+        descricao: group.rawLog.slice(0, 300),
+        prioridade: group.ocorrencias > 10 ? 'alta' : 'media',
+      };
+      emitLog(`${agentName}: AI indisponível, classificado por heurística como ${result.classification}`);
+    }
+
+    // 3. Mark as analyzed in DB
     await dbMarkErrorLogsAsAnalyzed(group.logIds);
 
+    // 4. Handle result
     if (result.classification === 'real_error') {
       const bugId = `BUG-${++bugCounter}`;
       reportedPatterns.set(group.pattern, bugId);
-      emitLog(`${agentName}: Erro REAL — ${result.titulo} (${group.ocorrencias}x, ${group.usuarios.length} usr) → QA`);
-      io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: `Erro real! ${bugId}`, type: 'alert', duration: 4000 });
-      io.emit('agent:walk_to', { agentName, role: 'log_analyzer', toSectorId: 'QA_ROOM', message: `Escalando ${bugId}` });
-      const ticket = await dbCreateTicket({ type: 'qa', source: 'logs', discord_author: `Log Monitor (${agentName})`, discord_message: `[LOG] ${result.titulo} — ${group.ocorrencias}x, ${group.usuarios.length} usr. ${group.tela} ${group.rota}` });
+
+      // VISUAL: Alert bubble + walk to QA
+      io.emit('agent:bubble', {
+        agentName, role: 'log_analyzer',
+        text: `ERRO! ${bugId} → QA`,
+        type: 'alert', duration: 5000,
+      });
+      emitLog(`${agentName}: ERRO REAL — ${result.titulo} (${group.ocorrencias}x) → Escalando ${bugId} para QA`);
+
+      // Walk to QA visually
+      io.emit('agent:walk_to', {
+        agentName, role: 'log_analyzer',
+        toSectorId: 'QA_ROOM',
+        message: `${bugId}: ${result.titulo.slice(0, 30)}`,
+      });
+
+      // Create ticket
+      const ticket = await dbCreateTicket({
+        type: 'qa', source: 'logs',
+        discord_author: `${agentName} (Log)`,
+        discord_message: `[LOG] ${result.titulo} — ${group.ocorrencias}x, ${group.usuarios.length} usr. ${group.tela} ${group.rota}`,
+      });
+
       if (ticket) {
         io.emit('ticket:new', ticket);
-        const bugData = { acao: 'escalar_qa', titulo: result.titulo, descricao: `${result.descricao}\n\nOcorrências: ${group.ocorrencias}\nUsuários: ${group.usuarios.join(', ')}\nTela: ${group.tela}\nRota: ${group.rota}\nComponente: ${group.componente}\nPeríodo: ${new Date(group.primeiraOcorrencia).toLocaleString('pt-BR')} - ${new Date(group.ultimaOcorrencia).toLocaleString('pt-BR')}\n\nLog:\n${group.rawLog.slice(0, 800)}`, prioridade: result.prioridade, error_log_ids: group.logIds };
+        io.emit('ticket:updated', { id: ticket.id, status: 'escalated', classification: 'bug' });
+
+        const bugData = {
+          acao: 'escalar_qa',
+          titulo: result.titulo,
+          descricao: `${result.descricao}\n\nOcorrências: ${group.ocorrencias}\nUsuários: ${group.usuarios.join(', ')}\nTela: ${group.tela}\nRota: ${group.rota}\nComponente: ${group.componente}\nPeríodo: ${new Date(group.primeiraOcorrencia).toLocaleString('pt-BR')} - ${new Date(group.ultimaOcorrencia).toLocaleString('pt-BR')}\n\nLog:\n${group.rawLog.slice(0, 800)}`,
+          prioridade: result.prioridade,
+          error_log_ids: group.logIds,
+        };
+
         const channelId = `log_${bugId}`;
         activeChannels.set(channelId, { ticketId: ticket.id, status: 'qa', agentName, agentId: '', agentPrompt: '' });
+
+        // Enter QA pipeline
         await processQA(channelId, ticket.id, bugData, bugId, '');
       }
+
     } else if (result.classification === 'known_issue') {
       reportedPatterns.set(group.pattern, 'KNOWN');
+      io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: `Conhecido ✓`, type: 'done', duration: 3000 });
       emitLog(`${agentName}: Conhecido — ${result.titulo} (${group.ocorrencias}x)`);
-      io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: 'Conhecido', type: 'done', duration: 3000 });
+
     } else {
+      io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: `OK ✓`, type: 'done', duration: 2000 });
       emitLog(`${agentName}: Falso positivo — ${result.titulo}`);
     }
-  } catch (error) { console.error('[ErrorLogs] Analysis error:', error); }
+
+  } catch (error) {
+    console.error(`[ErrorLogs] ${agentName} analysis error:`, error);
+    // Still mark as analyzed to avoid infinite retry
+    await dbMarkErrorLogsAsAnalyzed(group.logIds).catch(() => {});
+  }
 }
 
 function getErrorLogStats() { return errorLogStats; }
