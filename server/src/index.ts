@@ -1827,15 +1827,9 @@ async function idleAgentLife() {
   const roll = Math.random();
 
   if (roll < 0.85) {
-    // 85% — just a thought bubble, agent stays put
-    const bubbleText = await generateBubble(agent.name, personality, situation);
-    io.emit('agent:bubble', {
-      agentName: agent.name,
-      role: agent.role,
-      text: bubbleText,
-      type: 'chat',
-      duration: 6000,
-    });
+    // 85% — agent stays put, NO idle bubble (only show bubbles when actually working)
+    // Bubbles are reserved for: processing tickets, analyzing logs, talking to agents, etc.
+    return;
 
   } else {
     // 15% — walk to another sector, say something, then return
@@ -1847,48 +1841,15 @@ async function idleAgentLife() {
       'Você vai até a outra sala pegar um café e trocar uma ideia',
       'Você vai verificar pessoalmente como está o trabalho do outro time',
     ];
-    const walkSituation = walkSituations[Math.floor(Math.random() * walkSituations.length)];
-    const bubbleText = await generateBubble(agent.name, personality, walkSituation);
-
-    io.emit('agent:bubble', {
+    // Walk to the sector silently (no idle bubbles)
+    io.emit('agent:walk_to', {
       agentName: agent.name,
       role: agent.role,
-      text: bubbleText,
-      type: 'chat',
-      duration: 3000,
+      toSectorId: targetSector,
+      message: '',
     });
 
-    // Walk to the sector
-    setTimeout(() => {
-      io.emit('agent:walk_to', {
-        agentName: agent.name,
-        role: agent.role,
-        toSectorId: targetSector,
-        message: '',
-      });
-    }, 1500);
-
-    // Optional: say something when arriving
-    const arrivalDelay = 8000 + Math.random() * 6000;
-    setTimeout(async () => {
-      const arrivalSituations = [
-        'Você chegou até a mesa de um colega para uma visita rápida',
-        'Você está de visita em outra sala e começa uma conversa casual',
-      ];
-      const arrivalText = await generateBubble(
-        agent.name, personality,
-        arrivalSituations[Math.floor(Math.random() * arrivalSituations.length)]
-      );
-      io.emit('agent:bubble', {
-        agentName: agent.name,
-        role: agent.role,
-        text: arrivalText,
-        type: 'chat',
-        duration: 5000,
-      });
-    }, arrivalDelay);
-
-    // Return to seat after 10-20 seconds (was 20-40s)
+    // Return to seat after 10-20 seconds
     const returnDelay = 10000 + Math.random() * 10000;
     const timer = setTimeout(() => {
       io.emit('agent:return_to_seat', { agentName: agent.name });

@@ -416,43 +416,38 @@ function renderSectorKPIs(
 ): void {
   const s = TILE_SIZE * zoom;
 
-  // Suporte KPIs
-  const suporteSector = SECTORS.RECEPTION;
-  renderKPIPanel(ctx, zoom, s, suporteSector.bounds.colEnd - 6, suporteSector.bounds.rowEnd - 4, [
+  // Suporte KPIs — bottom-right corner of RECEPTION (away from desks)
+  renderKPIPanel(ctx, zoom, s, 17, 7, [
     { icon: '#4488ff', label: 'Tickets', value: stats.suporte.total },
     { icon: '#2ecc71', label: 'Resolvidos', value: stats.suporte.resolvidos },
     { icon: '#e74c3c', label: 'Na fila', value: stats.suporte.fila },
     { icon: '#f39c12', label: 'Agentes', value: stats.suporte.agentes },
   ]);
 
-  // QA KPIs
-  const qaSector = SECTORS.QA_ROOM;
-  renderKPIPanel(ctx, zoom, s, qaSector.bounds.colEnd - 4, qaSector.bounds.rowEnd - 4, [
+  // QA KPIs — bottom-right corner of QA_ROOM
+  renderKPIPanel(ctx, zoom, s, 7, 21, [
     { icon: '#aa44ff', label: 'Analisados', value: stats.qa.analisados },
     { icon: '#2ecc71', label: 'Aprovados', value: stats.qa.aprovados },
     { icon: '#f39c12', label: 'Agentes', value: stats.qa.agentes },
   ]);
 
-  // DEV KPIs
-  const devSector = SECTORS.DEV_ROOM;
-  renderKPIPanel(ctx, zoom, s, devSector.bounds.colEnd - 4, devSector.bounds.rowEnd - 4, [
+  // DEV KPIs — bottom-right corner of DEV_ROOM
+  renderKPIPanel(ctx, zoom, s, 17, 21, [
     { icon: '#e74c3c', label: 'Abertos', value: stats.dev.casosAbertos },
     { icon: '#2ecc71', label: 'Resolvidos', value: stats.dev.casosResolvidos },
     { icon: '#f39c12', label: 'Agentes', value: stats.dev.agentes },
   ]);
 
-  // Logs KPIs
-  const logsSector = SECTORS.LOGS_ROOM;
-  renderKPIPanel(ctx, zoom, s, logsSector.bounds.colEnd - 4, logsSector.bounds.rowEnd - 5, [
-    { icon: '#44cc88', label: 'Total logs', value: stats.logs.totalLogs },
-    { icon: '#2ecc71', label: 'Resolvidos', value: stats.logs.logsResolvidos },
-    { icon: '#e74c3c', label: 'Erros reais', value: stats.logs.errosReais },
+  // Logs KPIs — bottom area of LOGS_ROOM
+  renderKPIPanel(ctx, zoom, s, 23, 21, [
+    { icon: '#44cc88', label: 'Total', value: stats.logs.totalLogs },
+    { icon: '#2ecc71', label: 'Resolv.', value: stats.logs.logsResolvidos },
+    { icon: '#e74c3c', label: 'Erros', value: stats.logs.errosReais },
     { icon: '#f39c12', label: 'Agentes', value: stats.logs.agentes },
   ]);
 
-  // CEO KPIs
-  const ceoSector = SECTORS.CEO_ROOM;
-  renderKPIPanel(ctx, zoom, s, ceoSector.bounds.colEnd - 5, ceoSector.bounds.rowStart + 1, [
+  // CEO KPIs — right side of CEO_ROOM (away from desk)
+  renderKPIPanel(ctx, zoom, s, 35, 18, [
     { icon: '#4488ff', label: 'Ativos', value: stats.ceo.agentesAtivos },
     { icon: '#2ecc71', label: 'Ocupados', value: stats.ceo.ocupados },
     { icon: '#95a5a6', label: 'Ociosos', value: stats.ceo.ociosos },
@@ -468,15 +463,15 @@ function renderKPIPanel(
   row: number,
   lines: KPILine[],
 ): void {
-  const fontSize = Math.max(6, zoom * 3);
-  const lineHeight = fontSize + 3 * zoom;
-  const padX = 4 * zoom;
-  const padY = 3 * zoom;
-  const iconSize = Math.max(3, zoom * 2);
+  const fontSize = Math.max(8, zoom * 4.5);
+  const lineHeight = fontSize + 4 * zoom;
+  const padX = 5 * zoom;
+  const padY = 4 * zoom;
+  const iconSize = Math.max(4, zoom * 3);
 
   const x = col * tileSize;
   const y = row * tileSize;
-  const panelW = 30 * zoom;
+  const panelW = 38 * zoom;
   const panelH = padY * 2 + lines.length * lineHeight;
 
   ctx.save();
