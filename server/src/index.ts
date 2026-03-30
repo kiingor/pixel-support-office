@@ -48,6 +48,7 @@ interface SupportAgent {
   currentChannelId: string | null;
 }
 const supportAgents: SupportAgent[] = [];
+const logAnalyzerAgents: string[] = []; // Names of all log_analyzer agents
 const ticketQueue: Array<{ author: string; content: string; channelId: string }> = [];
 
 // In-memory conversation history fallback (in case DB fails)
@@ -434,13 +435,17 @@ function getActiveAgentsList(): Array<{name: string, role: string, sectorId: str
     agents.push({ name: sa.name, role: 'suporte', sectorId: 'RECEPTION', systemPrompt: buildPersonalizedPrompt('suporte', sa.name) });
   }
 
-  // Fixed agents (QA, QA Manager, DEV, Dev Lead, Log, CEO)
+  // Fixed agents (QA, QA Manager, DEV, Dev Lead, CEO)
   agents.push({ name: qaAgentName,   role: 'qa',           sectorId: 'QA_ROOM',  systemPrompt: buildPersonalizedPrompt('qa',           qaAgentName) });
   agents.push({ name: qaManagerName, role: 'qa_manager',   sectorId: 'QA_ROOM',  systemPrompt: buildPersonalizedPrompt('qa_manager',   qaManagerName) });
   agents.push({ name: devAgentName,  role: 'dev',          sectorId: 'DEV_ROOM', systemPrompt: buildPersonalizedPrompt('dev',          devAgentName) });
   agents.push({ name: devLeadName,   role: 'dev_lead',     sectorId: 'DEV_ROOM', systemPrompt: buildPersonalizedPrompt('dev_lead',     devLeadName) });
-  agents.push({ name: logAgentName,  role: 'log_analyzer', sectorId: 'LOGS_ROOM',systemPrompt: buildPersonalizedPrompt('log_analyzer', logAgentName) });
   agents.push({ name: ceoAgentName,  role: 'ceo',          sectorId: 'CEO_ROOM', systemPrompt: CEO_ACTION_PROMPT });
+
+  // Log analyzer agents — ALL of them from the tracked list
+  for (const la of logAnalyzerAgents) {
+    agents.push({ name: la, role: 'log_analyzer', sectorId: 'LOGS_ROOM', systemPrompt: buildPersonalizedPrompt('log_analyzer', la) });
+  }
 
   return agents;
 }
@@ -1240,7 +1245,10 @@ io.on('connection', (socket) => {
     if (role === 'dev_lead') devLeadName = data.name;
     if (role === 'qa') qaAgentName = data.name;
     if (role === 'dev') devAgentName = data.name;
-    if (role === 'log_analyzer') logAgentName = data.name;
+    if (role === 'log_analyzer') {
+      logAgentName = data.name;
+      if (!logAnalyzerAgents.includes(data.name)) logAnalyzerAgents.push(data.name);
+    }
     if (role === 'ceo') ceoAgentName = data.name;
 
     // Only track support agents in the in-memory roster (for ticket routing)
@@ -1670,8 +1678,14 @@ async function start() {
             });
           }
         }
+        // Track ALL log_analyzer agents for distribution
+        if (a.type === 'log_analyzer') {
+          if (!logAnalyzerAgents.includes(a.name)) {
+            logAnalyzerAgents.push(a.name);
+          }
+        }
       }
-      console.log(`[Server] Loaded ${dbAgents.length} agents from DB (${supportAgents.length} support agents)`);
+      console.log(`[Server] Loaded ${dbAgents.length} agents from DB (${supportAgents.length} support, ${logAnalyzerAgents.length} log_analyzer)`);
     } catch (e) {
       console.error('Failed to load agents from DB:', e);
     }
@@ -1972,14 +1986,14 @@ async function analyzeErrorLogGroup(agentName: string, group: ErrorLogGroup): Pr
   try {
     const shortLog = group.rawLog.slice(0, 50).replace(/\n/g, ' ');
 
-    // 1. VISUAL: Show agent is working (direct text, no AI call)
+    // 1. VISUAL: Show agent is working (long bubble so it's visible during analysis)
     emitLog(`${agentName} analisando: ${shortLog}... (${group.ocorrencias}x, ${group.usuarios.length} usr)`);
     io.emit('agent:bubble', {
       agentName, role: 'log_analyzer',
-      text: `${group.tela} ${group.rota} (${group.ocorrencias}x)`,
-      type: 'processing', duration: 10000,
+      text: `Analisando: ${group.tela}/${group.rota} (${group.ocorrencias}x)`,
+      type: 'processing', duration: 60000, // Long bubble until analysis completes
     });
-    io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: 'analyzing' });
+    io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: `Analisando: ${shortLog}` });
 
     // 2. AI Classification (with graceful fallback if AI fails)
     let result: { classification: string; titulo: string; descricao: string; prioridade: string };
