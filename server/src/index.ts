@@ -1087,7 +1087,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     devCase.efeitos_colaterais = [...(devCase.efeitos_colaterais || []), ...leadReview.riscos_adicionais];
   }
 
-  // Save approved case to DB (created_by = dev agent name)
+  // Save approved case to DB
   await dbCreateCase({
     caso_id: devCase.caso_id || caseId,
     bug_id: bugId,
@@ -1095,7 +1095,6 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     causa_raiz: devCase.causa_raiz,
     estrategia_fix: devCase.estrategia_fix,
     prompt_ia: devCase.prompt_ia,
-    created_by: devAgentName,
   });
 
   // Save DEV's internal analysis
