@@ -854,11 +854,25 @@ async function sendSupportResponse(channelId: string, ticketId: string, response
   // Clean any JSON from the response for Discord
   let cleanResponse = response.replace(/```json[\s\S]*?```/g, '').replace(/\{[\s\S]*"acao"[\s\S]*\}/g, '').trim();
 
-  // Remove duplicate agent name prefixes from AI response (AI sometimes adds "AgentName: " to its response)
-  const namePrefix = new RegExp(`^${agentName}:\\s*`, 'gi');
-  cleanResponse = cleanResponse.replace(namePrefix, '').trim();
+  // Remove ALL agent name prefixes from AI response (AI adds "AgentName:" throughout)
+  // Match "Bruno:" or "🤖 Bruno:" or "**Bruno:**" at start of lines
+  const escapedName = agentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  cleanResponse = cleanResponse
+    .replace(new RegExp(`^\\s*🤖\\s*\\**${escapedName}\\**:?\\s*`, 'gim'), '')
+    .replace(new RegExp(`^\\s*\\**${escapedName}\\**:?\\s*`, 'gim'), '')
+    .replace(/^\s*\n/gm, '') // Remove empty lines left behind
+    .trim();
 
-  console.log(`[Support] ${agentName} responding to ${channelId} (${cleanResponse.length} chars)`);
+  // If AI generated multiple "agent blocks", take only the first one
+  // This catches cases like "Oi Filipe!\n\nBruno: Oi Filipe!" where AI repeats itself
+  const duplicatePattern = new RegExp(`\\n\\s*(?:🤖\\s*)?\\**${escapedName}\\**:`, 'i');
+  const dupMatch = cleanResponse.search(duplicatePattern);
+  if (dupMatch > 20) {
+    // There's a second "Bruno:" block after the first 20 chars — truncate
+    cleanResponse = cleanResponse.slice(0, dupMatch).trim();
+  }
+
+  console.log(`[Support] ${agentName} responding to ${channelId} (${cleanResponse.length} chars): ${cleanResponse.slice(0, 120)}...`);
 
   // Save to memory and DB
   addToMemory(channelId, 'assistant', `${agentName}: ${cleanResponse}`);
