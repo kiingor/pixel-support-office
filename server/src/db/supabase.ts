@@ -10,6 +10,13 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
+// SoftcomHub Supabase (for error_logs table)
+const softcomhubUrl = process.env.SOFTCOMHUB_SUPABASE_URL || '';
+const softcomhubKey = process.env.SOFTCOMHUB_SUPABASE_KEY || '';
+export const softcomhubSupabase = (softcomhubUrl && softcomhubKey)
+  ? createClient(softcomhubUrl, softcomhubKey)
+  : null;
+
 // Initialize tables (run schema if needed)
 export async function initDatabase() {
   console.log('Connecting to Supabase:', supabaseUrl);
@@ -386,7 +393,8 @@ export interface ErrorLog {
 
 /** Fetch error logs that haven't been analyzed yet (caso_aberto = false) */
 export async function dbGetUnanalyzedErrorLogs(limit = 100): Promise<ErrorLog[]> {
-  const { data, error } = await supabase
+  if (!softcomhubSupabase) return [];
+  const { data, error } = await softcomhubSupabase
     .from('error_logs')
     .select('*')
     .eq('caso_aberto', false)
@@ -399,7 +407,8 @@ export async function dbGetUnanalyzedErrorLogs(limit = 100): Promise<ErrorLog[]>
 
 /** Mark error logs as caso_aberto = true (case was created for them) */
 export async function dbMarkErrorLogsAsAnalyzed(ids: string[]): Promise<void> {
-  const { error } = await supabase
+  if (!softcomhubSupabase) return;
+  const { error } = await softcomhubSupabase
     .from('error_logs')
     .update({ caso_aberto: true })
     .in('id', ids);
@@ -408,10 +417,11 @@ export async function dbMarkErrorLogsAsAnalyzed(ids: string[]): Promise<void> {
 
 /** Get error log counts for KPIs */
 export async function dbGetErrorLogStats(): Promise<{ total: number; analisados: number; naoAnalisados: number; resolvidos: number }> {
-  const { count: total } = await supabase.from('error_logs').select('*', { count: 'exact', head: true });
-  const { count: analisados } = await supabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('caso_aberto', true);
-  const { count: naoAnalisados } = await supabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('caso_aberto', false).eq('resolvido', false);
-  const { count: resolvidos } = await supabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('resolvido', true);
+  if (!softcomhubSupabase) return { total: 0, analisados: 0, naoAnalisados: 0, resolvidos: 0 };
+  const { count: total } = await softcomhubSupabase.from('error_logs').select('*', { count: 'exact', head: true });
+  const { count: analisados } = await softcomhubSupabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('caso_aberto', true);
+  const { count: naoAnalisados } = await softcomhubSupabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('caso_aberto', false).eq('resolvido', false);
+  const { count: resolvidos } = await softcomhubSupabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('resolvido', true);
   return {
     total: total || 0,
     analisados: analisados || 0,

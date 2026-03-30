@@ -200,15 +200,8 @@ function updateIdleBehaviors(
     }
   }
 
-  // 2. Random quirk bubble (only when no active bubbles)
-  if (ch.quirkBubbles.length > 0 && ch.bubbles.length === 0) {
-    ch.idleBubbleTimer += dt;
-    if (ch.idleBubbleTimer >= ch.bubbleInterval) {
-      ch.idleBubbleTimer = 0;
-      const text = ch.quirkBubbles[Math.floor(Math.random() * ch.quirkBubbles.length)];
-      addBubble(ch, text, 'chat', 5);
-    }
-  }
+  // 2. Random quirk bubbles DISABLED — only show bubbles from server events (real work)
+  // Bubbles are reserved for: processing tickets, analyzing logs, QA/DEV pipeline, etc.
 
   // 3. Micro-wander DISABLED — agents stay at their desks
   // Wandering is handled server-side only (cross-sector visits via idleAgentLife)
