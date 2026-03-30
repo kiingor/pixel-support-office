@@ -71,6 +71,12 @@ export function CaseDetailModal() {
         <div className="modal-section">
           <h4 className="section-title">Detalhes do Caso</h4>
           <p style={{ fontSize: 13, color: '#ccc', marginBottom: 8 }}>{caseInfo.titulo}</p>
+          {caseInfo.createdBy && (
+            <div style={{ fontSize: 12, color: '#5a7a9a', marginBottom: 8 }}>
+              Criado por: <span style={{ color: '#ff8844', fontWeight: 700 }}>{caseInfo.createdBy}</span>
+              {caseInfo.sourceSector && <span className="badge badge-bug" style={{ marginLeft: 6 }}>{caseInfo.sourceSector}</span>}
+            </div>
+          )}
 
           {caseInfo.promptIa && (
             <div className="prompt-box">

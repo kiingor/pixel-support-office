@@ -93,8 +93,10 @@ export function useWebSocket() {
         titulo: devCase.titulo,
         promptIa: devCase.prompt_ia,
         status: 'open',
+        createdBy: devCase.created_by,
+        sourceSector: devCase.source_sector || 'DEV',
       });
-      store.addLogEntry(`Caso ${devCase.caso_id} aberto: ${devCase.titulo}`);
+      store.addLogEntry(`Caso ${devCase.caso_id} aberto por ${devCase.created_by || 'DEV'}: ${devCase.titulo}`);
     });
 
     socket.on('case:resolved', (data: { casoId: string; titulo?: string; bugId?: string; createdAt?: string; resolvedAt?: string }) => {

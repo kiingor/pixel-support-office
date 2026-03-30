@@ -282,7 +282,7 @@ function renderAgentNames(
   }
 }
 
-/** Render a small animated pixel-art status icon next to the agent name */
+/** Render a pixel-art working status icon next to agent name */
 function renderBusyIndicator(
   ctx: CanvasRenderingContext2D,
   nameX: number,
@@ -291,43 +291,113 @@ function renderBusyIndicator(
   state: CharacterState,
   role: string,
 ): void {
-  const s = Math.max(2, zoom * 1.5); // Pixel size
-  const x = nameX + 20 * zoom; // Right of name
-  const y = nameY - 4 * zoom;  // Aligned with name
+  const s = Math.max(2, zoom * 2); // Pixel size (bigger)
+  const x = nameX + 18 * zoom;
+  const y = nameY - 5 * zoom;
+  const blink = Math.sin(performance.now() / 400) > 0;
 
   ctx.save();
 
   if (state === CharacterState.TYPE) {
-    // Typing indicator: small green monitor icon with blinking cursor
-    const blink = Math.sin(performance.now() / 400) > 0;
+    if (role === 'dev' || role === 'dev_lead') {
+      // DEV: Code brackets icon </> with blinking cursor
+      const c = '#ff8844';
+      ctx.fillStyle = '#0a1428';
+      ctx.fillRect(x, y, s * 7, s * 5);
+      ctx.strokeStyle = '#1a3a5c';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, s * 7, s * 5);
+      // < bracket
+      ctx.fillStyle = c;
+      ctx.fillRect(x + s, y + s, s * 0.7, s * 0.7);
+      ctx.fillRect(x + s * 0.5, y + s * 1.5, s * 0.7, s * 0.7);
+      ctx.fillRect(x + s, y + s * 2.5, s * 0.7, s * 0.7);
+      // / slash
+      ctx.fillRect(x + s * 2.5, y + s * 0.8, s * 0.7, s * 0.7);
+      ctx.fillRect(x + s * 3, y + s * 1.5, s * 0.7, s * 0.7);
+      ctx.fillRect(x + s * 3.5, y + s * 2.2, s * 0.7, s * 0.7);
+      // > bracket
+      ctx.fillRect(x + s * 5, y + s, s * 0.7, s * 0.7);
+      ctx.fillRect(x + s * 5.5, y + s * 1.5, s * 0.7, s * 0.7);
+      ctx.fillRect(x + s * 5, y + s * 2.5, s * 0.7, s * 0.7);
+      // Blinking cursor
+      if (blink) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + s * 3, y + s * 3.5, s * 0.5, s * 0.8);
+      }
 
-    // Monitor frame
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(x, y, s * 5, s * 4);
-    ctx.fillStyle = role === 'log_analyzer' ? '#0a2a0a' : '#0a1a2a';
-    ctx.fillRect(x + s * 0.5, y + s * 0.5, s * 4, s * 2.5);
+    } else if (role === 'log_analyzer') {
+      // LOG: Terminal icon with scrolling text
+      ctx.fillStyle = '#0a2a0a';
+      ctx.fillRect(x, y, s * 7, s * 5);
+      ctx.strokeStyle = '#44cc88';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, s * 7, s * 5);
+      // Terminal lines
+      ctx.fillStyle = '#44cc88';
+      ctx.fillRect(x + s * 0.5, y + s * 0.8, s * 0.5, s * 0.5); // $
+      ctx.fillRect(x + s * 1.2, y + s * 0.8, s * 3, s * 0.5);
+      ctx.fillRect(x + s * 0.5, y + s * 1.8, s * 0.5, s * 0.5);
+      ctx.fillRect(x + s * 1.2, y + s * 1.8, s * 2, s * 0.5);
+      ctx.fillRect(x + s * 0.5, y + s * 2.8, s * 0.5, s * 0.5);
+      ctx.fillStyle = '#e74c3c'; // Error line in red
+      ctx.fillRect(x + s * 1.2, y + s * 2.8, s * 4, s * 0.5);
+      if (blink) {
+        ctx.fillStyle = '#44cc88';
+        ctx.fillRect(x + s * 0.5, y + s * 3.8, s * 0.7, s * 0.5);
+      }
 
-    // Screen content (green for logs, blue for others)
-    const screenColor = role === 'log_analyzer' ? '#44cc88' : '#4488ff';
-    ctx.fillStyle = screenColor;
-    ctx.fillRect(x + s, y + s, s * 1.5, s * 0.5);
-    if (blink) {
-      ctx.fillRect(x + s * 3, y + s, s * 0.5, s * 0.5);
+    } else if (role === 'qa' || role === 'qa_manager') {
+      // QA: Magnifying glass / bug search icon
+      ctx.fillStyle = '#0a1a2a';
+      ctx.fillRect(x, y, s * 6, s * 5);
+      ctx.strokeStyle = '#aa44ff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, s * 6, s * 5);
+      // Bug icon
+      ctx.fillStyle = '#aa44ff';
+      ctx.fillRect(x + s * 1.5, y + s * 1, s * 2, s * 2); // body
+      ctx.fillRect(x + s * 1, y + s * 1.5, s * 0.5, s * 0.5); // left leg
+      ctx.fillRect(x + s * 3.5, y + s * 1.5, s * 0.5, s * 0.5); // right leg
+      ctx.fillRect(x + s * 2, y + s * 0.5, s, s * 0.5); // head
+      // Check mark
+      if (blink) {
+        ctx.fillStyle = '#2ecc71';
+        ctx.fillRect(x + s * 4, y + s * 3, s * 0.5, s * 0.5);
+        ctx.fillRect(x + s * 4.5, y + s * 3.5, s * 0.5, s * 0.5);
+      }
+
+    } else {
+      // SUPORTE/CEO: Chat/headset icon
+      ctx.fillStyle = '#0a1a2a';
+      ctx.fillRect(x, y, s * 6, s * 5);
+      ctx.strokeStyle = '#4488ff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, s * 6, s * 5);
+      // Headset shape
+      ctx.fillStyle = '#4488ff';
+      ctx.fillRect(x + s * 1.5, y + s * 0.5, s * 2.5, s * 0.5); // top band
+      ctx.fillRect(x + s * 1, y + s * 1, s * 0.8, s * 2); // left ear
+      ctx.fillRect(x + s * 3.7, y + s * 1, s * 0.8, s * 2); // right ear
+      // Mic
+      ctx.fillRect(x + s * 2, y + s * 3, s * 0.5, s * 1.2);
+      ctx.fillRect(x + s * 1.5, y + s * 4, s * 1.5, s * 0.5);
     }
-    ctx.fillRect(x + s, y + s * 1.5, s * 2.5, s * 0.5);
 
-    // Stand
-    ctx.fillStyle = '#333';
-    ctx.fillRect(x + s * 2, y + s * 3.5, s, s * 0.5);
   } else if (state === CharacterState.TALK) {
-    // Talking indicator: small speech wave icon
-    const wave = Math.sin(performance.now() / 300);
-
+    // Talking: speech icon
+    ctx.fillStyle = '#0a1a2a';
+    ctx.fillRect(x, y, s * 5, s * 4);
+    ctx.strokeStyle = '#f0c040';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, s * 5, s * 4);
+    // Speech lines
     ctx.fillStyle = '#f0c040';
-    // Three bars like sound waves
-    ctx.fillRect(x, y + s, s * 0.8, s * 2);
-    ctx.fillRect(x + s * 1.2, y + s * 0.5 + wave * s * 0.3, s * 0.8, s * 3);
-    ctx.fillRect(x + s * 2.4, y + s * 0.8, s * 0.8, s * 1.5);
+    ctx.fillRect(x + s * 0.8, y + s * 0.8, s * 3, s * 0.5);
+    ctx.fillRect(x + s * 0.8, y + s * 1.8, s * 2, s * 0.5);
+    if (blink) {
+      ctx.fillRect(x + s * 0.8, y + s * 2.8, s * 2.5, s * 0.5);
+    }
   }
 
   ctx.restore();

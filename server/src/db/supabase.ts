@@ -233,24 +233,29 @@ export async function dbGetCaseConversation(casoId: string) {
     .single();
   if (!caseData?.bug_id) return [];
 
-  // Find the ticket by searching queue for this bug's channel
-  const { data: tickets } = await supabase
+  // Find the SPECIFIC ticket linked to this case's bug_id
+  // Look for the bug_id in discord_message or use the channel from conversations
+  const { data: conversations } = await supabase
+    .from('conversations')
+    .select('channel_id')
+    .like('channel_id', `log_${caseData.bug_id}%`)
+    .limit(1);
+
+  // Also check for Discord channel conversations
+  const { data: ticket } = await supabase
     .from('queue')
     .select('discord_channel_id')
-    .eq('classification', 'bug')
-    .order('created_at', { ascending: false })
-    .limit(50);
+    .ilike('discord_message', `%${caseData.bug_id}%`)
+    .limit(1)
+    .single();
 
-  if (!tickets || tickets.length === 0) return [];
-
-  // Get conversations for all matching channels
-  const channelIds = tickets.map(t => t.discord_channel_id).filter(Boolean);
-  if (channelIds.length === 0) return [];
+  const channelId = conversations?.[0]?.channel_id || ticket?.discord_channel_id;
+  if (!channelId) return [];
 
   const { data: messages } = await supabase
     .from('conversations')
     .select('role, author_name, message, created_at')
-    .in('channel_id', channelIds)
+    .eq('channel_id', channelId)
     .order('created_at', { ascending: true })
     .limit(50);
 

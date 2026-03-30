@@ -1076,7 +1076,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     devCase.efeitos_colaterais = [...(devCase.efeitos_colaterais || []), ...leadReview.riscos_adicionais];
   }
 
-  // Save approved case to DB
+  // Save approved case to DB (created_by = dev agent name)
   await dbCreateCase({
     caso_id: devCase.caso_id || caseId,
     bug_id: bugId,
@@ -1084,6 +1084,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     causa_raiz: devCase.causa_raiz,
     estrategia_fix: devCase.estrategia_fix,
     prompt_ia: devCase.prompt_ia,
+    created_by: devAgentName,
   });
 
   // Save DEV's internal analysis
@@ -1113,7 +1114,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     message: `Caso ${caseId} aberto e aprovado pelo Dev Lead. Título: ${devCase.titulo}`,
   });
 
-  io.emit('case:opened', devCase);
+  io.emit('case:opened', { ...devCase, created_by: devAgentName, source_sector: 'DEV' });
   emitLog(`DEV pipeline concluído — caso ${caseId}: ${devCase.titulo}`);
 
   await emitPersonalityBubble(devAgentName, 'dev', `Você acabou de criar e ter aprovado o caso ${caseId} pelo tech lead`, 'done', 4000);

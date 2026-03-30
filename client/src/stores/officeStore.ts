@@ -32,6 +32,8 @@ interface CaseInfo {
   titulo: string;
   promptIa?: string;
   status: string;
+  createdBy?: string;
+  sourceSector?: string;
 }
 
 interface LogEntry {

@@ -149,7 +149,13 @@ export function ControlPanel() {
                       {isOpen ? 'Aberto' : 'Resolvido'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: '#8aa', marginBottom: 6 }}>{c.titulo}</div>
+                  <div style={{ fontSize: 11, color: '#8aa', marginBottom: 4 }}>{c.titulo}</div>
+                  {c.createdBy && (
+                    <div style={{ fontSize: 10, color: '#5a7a9a', marginBottom: 4 }}>
+                      Criado por: <span style={{ color: '#ff8844', fontWeight: 600 }}>{c.createdBy}</span>
+                      {c.sourceSector && <span> ({c.sourceSector})</span>}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
                     {isOpen && (
                       <button className="btn btn-sm btn-success" onClick={() => resolveCase(c.casoId)}>
