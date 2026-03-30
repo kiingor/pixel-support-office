@@ -352,8 +352,47 @@ export interface Attachment {
 }
 
 /**
+ * Describe/transcribe a video or audio file using Google Gemini (supports multimodal).
+ * Downloads the media and sends to Gemini for analysis.
+ */
+async function describeMediaWithGemini(url: string, type: 'video' | 'audio', name: string): Promise<string> {
+  try {
+    const prompt = type === 'video'
+      ? `Analise este vídeo e descreva em detalhes o que está acontecendo. Se houver texto na tela (erro, interface), transcreva-o. Se houver áudio/fala, transcreva o que foi dito. Responda em português brasileiro.`
+      : `Transcreva o áudio completo deste arquivo. Se não conseguir transcrever, descreva o que ouviu (tom, idioma, contexto). Responda em português brasileiro.`;
+
+    const response = await openrouter.chat.completions.create({
+      model: 'gemini-2.0-flash',  // Full flash model (not lite) for multimodal
+      max_tokens: 2048,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            // @ts-ignore - Gemini OpenAI-compat supports media URLs
+            { type: 'image_url', image_url: { url } },
+          ] as any,
+        },
+      ],
+    });
+    const description = response.choices[0]?.message?.content?.trim();
+    if (description) {
+      console.log(`[Media] Gemini described ${type} "${name}" (${description.length} chars)`);
+      return description;
+    }
+    return `[${type.toUpperCase()} recebido: ${name} — não foi possível processar o conteúdo]`;
+  } catch (error: any) {
+    console.warn(`[Media] Gemini failed to describe ${type} "${name}":`, error?.message || error);
+    return `[${type.toUpperCase()} recebido: ${name} — URL: ${url} — conteúdo não processado automaticamente]`;
+  }
+}
+
+/**
  * Support agent chat — always uses Claude (main model).
- * Injects real SoftcomHub code context and supports image attachments via Claude vision.
+ * Injects real SoftcomHub code context and supports multimodal attachments:
+ *   - Images → Claude vision (direct)
+ *   - Videos/Audio → Gemini transcription → text context for Claude
+ *   - Documents → listed as text references
  */
 export async function supportChat(
   agentName: string,
@@ -377,16 +416,33 @@ ${codeContext}`;
 
   const userContent: ContentBlock[] = [{ type: 'text', text: userMessage }];
 
+  // Separate attachments by type
   const imageAttachments = attachments.filter(a => a.type === 'image');
-  const otherAttachments = attachments.filter(a => a.type !== 'image');
+  const videoAttachments = attachments.filter(a => a.type === 'video');
+  const audioAttachments = attachments.filter(a => a.type === 'audio');
+  const docAttachments = attachments.filter(a => a.type === 'document');
 
+  // Images → Claude vision (direct URL)
   for (const img of imageAttachments) {
     userContent.push({ type: 'image', source: { type: 'url', url: img.url } });
   }
 
-  if (otherAttachments.length > 0) {
-    const fileList = otherAttachments.map(a => `[${a.type.toUpperCase()}] ${a.name}: ${a.url}`).join('\n');
-    userContent.push({ type: 'text', text: `\nArquivos enviados:\n${fileList}` });
+  // Videos → Gemini transcription/description → text context
+  for (const vid of videoAttachments) {
+    const description = await describeMediaWithGemini(vid.url, 'video', vid.name);
+    userContent.push({ type: 'text', text: `\n📹 VÍDEO ENVIADO PELO CLIENTE (${vid.name}):\n${description}` });
+  }
+
+  // Audio → Gemini transcription → text context
+  for (const aud of audioAttachments) {
+    const transcription = await describeMediaWithGemini(aud.url, 'audio', aud.name);
+    userContent.push({ type: 'text', text: `\n🎤 ÁUDIO ENVIADO PELO CLIENTE (${aud.name}):\n${transcription}` });
+  }
+
+  // Documents → text reference with URL
+  if (docAttachments.length > 0) {
+    const fileList = docAttachments.map(a => `📎 ${a.name}: ${a.url}`).join('\n');
+    userContent.push({ type: 'text', text: `\nDocumentos enviados:\n${fileList}` });
   }
 
   try {
