@@ -210,32 +210,9 @@ function updateIdleBehaviors(
     }
   }
 
-  // 3. Micro-wander (only while truly idle, not while typing)
-  if (!allowWander) return;
-
-  if (ch.wanderCooldown < 0) {
-    // Return to seat after wander
-    sendCharacterTo(ch, ch.seatCol, ch.seatRow, tiles, blockedTiles);
-    ch.wanderCooldown = ch.wanderInterval * 0.4;
-  } else if (ch.wanderCooldown > 0) {
-    ch.wanderCooldown -= dt;
-  } else {
-    ch.wanderTimer += dt;
-    if (ch.wanderTimer >= ch.wanderInterval) {
-      ch.wanderTimer = 0;
-      const candidates = [
-        { col: ch.seatCol + 1, row: ch.seatRow },
-        { col: ch.seatCol - 1, row: ch.seatRow },
-        { col: ch.seatCol,     row: ch.seatRow + 1 },
-        { col: ch.seatCol,     row: ch.seatRow - 1 },
-      ].filter(p => isWalkable(p.col, p.row, tiles, blockedTiles));
-      if (candidates.length > 0) {
-        const target = candidates[Math.floor(Math.random() * candidates.length)];
-        sendCharacterTo(ch, target.col, target.row, tiles, blockedTiles);
-        ch.wanderCooldown = -1; // signal: return to seat after arriving
-      }
-    }
-  }
+  // 3. Micro-wander DISABLED — agents stay at their desks
+  // Wandering is handled server-side only (cross-sector visits via idleAgentLife)
+  // This prevents agents from constantly leaving their chairs locally
 }
 
 /** Send a character walking to a specific position. */

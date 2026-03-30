@@ -140,8 +140,29 @@ export class OfficeState {
     const targetSector = SECTORS[targetSectorId];
     const door = targetSector.doorPosition;
 
+    // Offset arrival to avoid stacking on the same door tile
+    let targetCol = door.col;
+    let targetRow = door.row;
+    // Check if another character is already at or heading to the door
+    for (const other of this.characters.values()) {
+      if (other.id !== ch.id && Math.abs(other.col - targetCol) < 2 && Math.abs(other.row - targetRow) < 2) {
+        // Offset by 1-2 tiles
+        const offsets = [{col: 1, row: 0}, {col: -1, row: 0}, {col: 0, row: 1}, {col: 2, row: 0}];
+        for (const off of offsets) {
+          const nc = targetCol + off.col;
+          const nr = targetRow + off.row;
+          if (!this.blockedTiles.has(`${nc},${nr}`)) {
+            targetCol = nc;
+            targetRow = nr;
+            break;
+          }
+        }
+        break;
+      }
+    }
+
     // First go to our sector's door, then to hallway, then to target door
-    const success = sendCharacterTo(ch, door.col, door.row, this.tiles, this.blockedTiles);
+    const success = sendCharacterTo(ch, targetCol, targetRow, this.tiles, this.blockedTiles);
 
     if (success) {
       this.pendingArrivals.set(ch.id, {
