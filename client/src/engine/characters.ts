@@ -35,7 +35,7 @@ const DEFAULT_BEHAVIOR: PersonalityBehavior = {
   walkSpeed: 48,
   idleTurnInterval: 5.5,
   bubbleInterval: 14,
-  wanderInterval: 20,
+  wanderInterval: 60,
   animFrameDuration: 0.20,
   quirkBubbles: [],
 };

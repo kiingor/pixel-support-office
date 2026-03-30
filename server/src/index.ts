@@ -19,7 +19,7 @@ import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent,
 import { initDiscord, sendDiscordMessage, type DiscordAttachment } from './services/discord.js';
 import { syncRepo, getProjectStructure } from './services/codeAnalysis.js';
 import { SOFTCOMHUB_KNOWLEDGE } from './data/softcomhub-knowledge.js';
-import { buildAgentPrompt } from './data/skills-loader.js';
+import { buildAgentPrompt, saveSectorKnowledge, loadSectorKnowledge, getSectorDisplayName } from './data/skills-loader.js';
 
 dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
@@ -640,6 +640,28 @@ app.get('/api/agents', async (_, res) => {
   res.json({ agents });
 });
 
+// --- Knowledge Base API ---
+app.get('/api/knowledge/:sector', (req, res) => {
+  const sector = req.params.sector;
+  const content = loadSectorKnowledge(sector);
+  res.json({ sector, content: content || '', hasContent: !!content });
+});
+
+app.post('/api/knowledge/:sector', (req, res) => {
+  const sector = req.params.sector;
+  const { content } = req.body;
+  if (!content || typeof content !== 'string') {
+    return res.status(400).json({ error: 'Content is required' });
+  }
+  const saved = saveSectorKnowledge(sector, content);
+  if (saved) {
+    emitLog(`Knowledge do setor ${getSectorDisplayName(sector)} atualizado via API (${content.length} chars)`);
+    res.json({ success: true, sector, length: content.length });
+  } else {
+    res.status(500).json({ error: 'Failed to save knowledge' });
+  }
+});
+
 // --- DISCORD MESSAGE HANDLER ---
 // This is the core: every Discord message goes through here
 const processingChannels = new Set<string>(); // Prevent concurrent processing per channel
@@ -1212,6 +1234,45 @@ io.on('connection', (socket) => {
   socket.on('chat:message', async (data) => {
     const { agentId, agentName, agentRole, systemPrompt, message, history } = data;
 
+    // Handle /knowledge command — save sector knowledge base
+    if (message.startsWith('/knowledge ')) {
+      const knowledgeText = message.slice('/knowledge '.length).trim();
+      if (knowledgeText.length < 10) {
+        socket.emit('chat:response', { agentId, response: 'O texto da base de conhecimento precisa ter pelo menos 10 caracteres.' });
+        return;
+      }
+      const sectorName = getSectorDisplayName(agentRole);
+      const saved = saveSectorKnowledge(agentRole, knowledgeText);
+      if (saved) {
+        socket.emit('chat:response', {
+          agentId,
+          response: `✅ Base de conhecimento do setor **${sectorName}** atualizada com sucesso!\n\n📝 ${knowledgeText.length} caracteres salvos. Todos os agentes deste setor agora têm acesso a esse conhecimento.`,
+        });
+        emitLog(`Knowledge do setor ${sectorName} atualizado por operador (${knowledgeText.length} chars)`);
+      } else {
+        socket.emit('chat:response', { agentId, response: '❌ Erro ao salvar a base de conhecimento. Tente novamente.' });
+      }
+      return;
+    }
+
+    // Handle /knowledge (without text) — show current knowledge
+    if (message.trim() === '/knowledge') {
+      const sectorName = getSectorDisplayName(agentRole);
+      const current = loadSectorKnowledge(agentRole);
+      if (current) {
+        socket.emit('chat:response', {
+          agentId,
+          response: `📚 Base de conhecimento atual do setor **${sectorName}**:\n\n${current.slice(0, 500)}${current.length > 500 ? '...\n\n(Truncado - total: ' + current.length + ' chars)' : ''}`,
+        });
+      } else {
+        socket.emit('chat:response', {
+          agentId,
+          response: `📚 O setor **${sectorName}** ainda não tem base de conhecimento. Use \`/knowledge [texto]\` para adicionar.`,
+        });
+      }
+      return;
+    }
+
     // Save user message to memory and DB
     const channelId = `dashboard_${agentId}`;
     addToMemory(channelId, 'user', message);
@@ -1623,7 +1684,7 @@ async function start() {
 
   setInterval(() => syncRepo(), 30 * 60 * 1000);
   setInterval(runLogAnalysis, 5 * 60 * 1000);
-  setInterval(idleAgentLife, 60000); // Agent idle life every 60s (was 22s — reduced to save AI credits)
+  setInterval(idleAgentLife, 120000); // Agent idle life every 120s (reduced from 60s — agents stay seated more)
 
   httpServer.listen(PORT, () => {
     console.log(`\n[Server] Running on http://localhost:${PORT}`);
@@ -1706,16 +1767,28 @@ async function idleAgentLife() {
   const allAgents = getActiveAgentsList();
   if (allAgents.length === 0) return;
 
-  // Pick a random agent
-  const agent = allAgents[Math.floor(Math.random() * allAgents.length)];
+  // Pick a random agent — SKIP busy agents (in support, attending tickets)
+  const idleAgents = allAgents.filter(a => {
+    // Never interrupt support agents that are busy
+    if (a.role === 'suporte') {
+      const sa = supportAgents.find(s => s.name === a.name);
+      if (sa?.busy) return false;
+    }
+    // Never interrupt agents already visiting
+    if (agentVisiting.has(a.name)) return false;
+    return true;
+  });
+  if (idleAgents.length === 0) return;
+
+  const agent = idleAgents[Math.floor(Math.random() * idleAgents.length)];
   const personality = agentPersonalities.get(agent.name) || '';
   const situations = IDLE_SITUATIONS[agent.role] || IDLE_SITUATIONS['suporte'];
   const situation = situations[Math.floor(Math.random() * situations.length)];
 
   const roll = Math.random();
 
-  if (roll < 0.55) {
-    // 55% — just a thought bubble, agent stays put
+  if (roll < 0.85) {
+    // 85% — just a thought bubble, agent stays put
     const bubbleText = await generateBubble(agent.name, personality, situation);
     io.emit('agent:bubble', {
       agentName: agent.name,
@@ -1726,12 +1799,9 @@ async function idleAgentLife() {
     });
 
   } else {
-    // 45% — walk to another sector, say something, then return
+    // 15% — walk to another sector, say something, then return
     const visitable = VISITABLE_SECTORS[agent.role] || ['RECEPTION'];
     const targetSector = visitable[Math.floor(Math.random() * visitable.length)];
-
-    // Don't send if already visiting somewhere
-    if (agentVisiting.has(agent.name)) return;
 
     const walkSituations = [
       `Você vai dar uma volta até a sala ${targetSector.replace('_', ' ')} visitar um colega`,
@@ -1779,8 +1849,8 @@ async function idleAgentLife() {
       });
     }, arrivalDelay);
 
-    // Return to home sector after 20-40 seconds
-    const returnDelay = 20000 + Math.random() * 20000;
+    // Return to seat after 10-20 seconds (was 20-40s)
+    const returnDelay = 10000 + Math.random() * 10000;
     const timer = setTimeout(() => {
       io.emit('agent:return_to_seat', { agentName: agent.name });
       agentVisiting.delete(agent.name);
