@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { OfficeCanvas } from './components/OfficeCanvas';
 import { ControlPanel } from './components/ControlPanel';
+import { CaseDetailModal } from './components/CaseDetailModal';
 import { StatusBar } from './components/StatusBar';
 import { useOfficeStore } from './stores/officeStore';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -81,6 +82,7 @@ export default function App() {
         </div>
       </div>
       <StatusBar />
+      <CaseDetailModal />
     </div>
   );
 }

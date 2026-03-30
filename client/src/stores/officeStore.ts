@@ -109,6 +109,12 @@ interface OfficeStoreState {
   updateAgentPrompt: (agentId: string, prompt: string) => void;
   renameAgent: (agentId: string, newName: string) => void;
   resolveCase: (casoId: string) => void;
+  deleteCase: (casoId: string) => void;
+  removeCase: (casoId: string) => void;
+  selectedCaseId: string | null;
+  caseDetailOpen: boolean;
+  openCaseDetail: (casoId: string) => void;
+  closeCaseDetail: () => void;
   getAgentProfile: (agentId: string) => AgentProfile | undefined;
   setContextMenu: (menu: ContextMenu | null) => void;
   setQueueSize: (size: number) => void;
@@ -129,6 +135,8 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   agents: [],
   tickets: [],
   cases: [],
+  selectedCaseId: null,
+  caseDetailOpen: false,
   logEntries: [],
   chatAgentId: null,
   chatHistories: new Map(),
@@ -345,8 +353,6 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   },
 
   resolveCase: (casoId) => {
-    const socket = get().socket;
-    // Call API to resolve
     fetch(`${SERVER_URL}/api/cases/${casoId}/resolve`, { method: 'POST' })
       .then(() => {
         get().updateCase(casoId, { status: 'resolved' });
@@ -354,6 +360,25 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       })
       .catch(e => console.error('Resolve case error:', e));
   },
+
+  deleteCase: (casoId) => {
+    fetch(`${SERVER_URL}/api/cases/${casoId}`, { method: 'DELETE' })
+      .then(() => {
+        get().removeCase(casoId);
+        get().addLogEntry(`Caso ${casoId} deletado`);
+        if (get().selectedCaseId === casoId) {
+          set({ caseDetailOpen: false, selectedCaseId: null });
+        }
+      })
+      .catch(e => console.error('Delete case error:', e));
+  },
+
+  removeCase: (casoId) => set(state => ({
+    cases: state.cases.filter(c => c.casoId !== casoId),
+  })),
+
+  openCaseDetail: (casoId) => set({ selectedCaseId: casoId, caseDetailOpen: true }),
+  closeCaseDetail: () => set({ caseDetailOpen: false, selectedCaseId: null }),
 
   getAgentProfile: (agentId) => get().agentProfiles.get(agentId),
   setContextMenu: (menu) => set({ contextMenu: menu }),

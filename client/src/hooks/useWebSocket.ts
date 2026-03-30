@@ -107,6 +107,10 @@ export function useWebSocket() {
       }
     });
 
+    socket.on('case:deleted', (data: { casoId: string }) => {
+      useOfficeStore.getState().removeCase(data.casoId);
+    });
+
     // Discord messages (show in logs)
     socket.on('discord:message', (data) => {
       useOfficeStore.getState().addLogEntry(`[Discord] ${data.author}: ${data.content.slice(0, 60)}`);

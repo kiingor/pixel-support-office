@@ -13,6 +13,7 @@ import {
   dbCreateAgent, dbFireAgent, dbGetActiveAgents,
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   dbGetAgentTickets, dbGetAgentCases, dbGetRecentTicketsWithAgent, dbGetRecentAnomalies,
+  dbDeleteCase, dbGetCaseConversation,
   supabase,
 } from './db/supabase.js';
 import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent, supportChat, generateBubble, reviewQA, reviewDevCase, generateLearningInsight } from './services/aiService.js';
@@ -599,6 +600,26 @@ app.post('/api/cases/:casoId/resolve', async (req, res) => {
   }
 
   res.json({ success: true });
+});
+
+// Delete a case
+app.delete('/api/cases/:casoId', async (req, res) => {
+  const { casoId } = req.params;
+  const success = await dbDeleteCase(casoId);
+  if (success) {
+    io.emit('case:deleted', { casoId });
+    emitLog(`Caso ${casoId} deletado`);
+    res.json({ success: true });
+  } else {
+    res.status(500).json({ error: 'Failed to delete case' });
+  }
+});
+
+// Get case conversation (messages from the ticket that originated this case)
+app.get('/api/cases/:casoId/conversation', async (req, res) => {
+  const { casoId } = req.params;
+  const messages = await dbGetCaseConversation(casoId);
+  res.json({ casoId, messages });
 });
 
 // Rename agent

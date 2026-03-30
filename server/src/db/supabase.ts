@@ -208,6 +208,48 @@ export async function dbUpdateCase(casoId: string, updates: Record<string, unkno
   if (error) console.error('dbUpdateCase error:', error);
 }
 
+export async function dbDeleteCase(casoId: string) {
+  const { error } = await supabase
+    .from('cases')
+    .delete()
+    .eq('caso_id', casoId);
+  if (error) console.error('dbDeleteCase error:', error);
+  return !error;
+}
+
+export async function dbGetCaseConversation(casoId: string) {
+  // Get the case to find bug_id
+  const { data: caseData } = await supabase
+    .from('cases')
+    .select('bug_id')
+    .eq('caso_id', casoId)
+    .single();
+  if (!caseData?.bug_id) return [];
+
+  // Find the ticket by searching queue for this bug's channel
+  const { data: tickets } = await supabase
+    .from('queue')
+    .select('discord_channel_id')
+    .eq('classification', 'bug')
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (!tickets || tickets.length === 0) return [];
+
+  // Get conversations for all matching channels
+  const channelIds = tickets.map(t => t.discord_channel_id).filter(Boolean);
+  if (channelIds.length === 0) return [];
+
+  const { data: messages } = await supabase
+    .from('conversations')
+    .select('role, author_name, message, created_at')
+    .in('channel_id', channelIds)
+    .order('created_at', { ascending: true })
+    .limit(50);
+
+  return messages || [];
+}
+
 export async function dbGetCaseWithTicket(casoId: string) {
   const { data } = await supabase
     .from('cases')
