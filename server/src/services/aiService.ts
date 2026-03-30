@@ -345,6 +345,77 @@ export async function analyzeLogs(
   }
 }
 
+/**
+ * Classify an external error log from SoftcomHub.
+ * Returns classification: real_error, known_issue, or false_positive
+ * Plus a structured bug report if it's a real error.
+ */
+export async function classifyExternalLog(
+  agentName: string,
+  systemPrompt: string,
+  logData: {
+    log: string;
+    tela: string;
+    rota: string;
+    componente: string;
+    usuarios: string[];
+    ocorrencias: number;
+    primeiraOcorrencia: string;
+    ultimaOcorrencia: string;
+  },
+): Promise<{
+  classification: 'real_error' | 'known_issue' | 'false_positive';
+  titulo: string;
+  descricao: string;
+  prioridade: 'alta' | 'media' | 'baixa';
+}> {
+  const prompt = `Analise este log de erro do sistema SoftcomHub e classifique:
+
+TELA: ${logData.tela}
+ROTA: ${logData.rota}
+COMPONENTE: ${logData.componente}
+OCORRÊNCIAS: ${logData.ocorrencias}x
+USUÁRIOS AFETADOS: ${logData.usuarios.join(', ')}
+PRIMEIRA OCORRÊNCIA: ${logData.primeiraOcorrencia}
+ÚLTIMA OCORRÊNCIA: ${logData.ultimaOcorrencia}
+
+LOG:
+${logData.log.slice(0, 1500)}
+
+Classifique como:
+- "real_error": Bug real na aplicação que precisa ser corrigido
+- "known_issue": Problema conhecido/inofensivo (ResizeObserver, Extension context invalidated, etc.)
+- "false_positive": Não é um erro real (warning, info, etc.)
+
+Responda APENAS em JSON:
+{"classification": "real_error|known_issue|false_positive", "titulo": "Titulo curto do erro", "descricao": "Descrição técnica breve", "prioridade": "alta|media|baixa"}`;
+
+  try {
+    const response = await client.messages.create({
+      model: CHEAP_MODEL,
+      max_tokens: 300,
+      system: systemPrompt.replace('{AGENT_NAME}', agentName),
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        classification: parsed.classification || 'false_positive',
+        titulo: parsed.titulo || 'Erro não classificado',
+        descricao: parsed.descricao || text,
+        prioridade: parsed.prioridade || 'media',
+      };
+    }
+    return { classification: 'false_positive', titulo: 'Erro não classificado', descricao: text, prioridade: 'baixa' };
+  } catch (error) {
+    console.error('AI classifyExternalLog error:', error);
+    return { classification: 'false_positive', titulo: 'Erro de classificação', descricao: 'Falha ao classificar', prioridade: 'baixa' };
+  }
+}
+
 export interface Attachment {
   url: string;
   type: 'image' | 'video' | 'audio' | 'document';
