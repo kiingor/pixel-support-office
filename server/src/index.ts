@@ -642,8 +642,14 @@ app.get('/api/agents', async (_, res) => {
 
 // --- DISCORD MESSAGE HANDLER ---
 // This is the core: every Discord message goes through here
+const processingChannels = new Set<string>(); // Prevent concurrent processing per channel
 
 async function handleDiscordMessage(author: string, content: string, channelId: string, assignedAgent?: SupportAgent, attachments: DiscordAttachment[] = []) {
+  // Prevent concurrent processing for the same channel
+  if (processingChannels.has(channelId)) return;
+  processingChannels.add(channelId);
+
+  try {
   // Note: message is saved inside handleSupportMessage to avoid duplicates
   io.emit('discord:message', { author, content, channelId, attachments });
 
@@ -685,6 +691,9 @@ async function handleDiscordMessage(author: string, content: string, channelId: 
     }
   }
   // If status is processing/qa/dev, ignore (agent is working)
+  } finally {
+    processingChannels.delete(channelId);
+  }
 }
 
 // --- SUPPORT AGENT ---

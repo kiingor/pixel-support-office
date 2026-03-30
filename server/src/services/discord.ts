@@ -16,6 +16,10 @@ type MessageHandler = (author: string, content: string, channelId: string, attac
 let discordClient: Client | null = null;
 let messageHandler: MessageHandler | null = null;
 
+// Deduplication: prevent processing the same message twice
+const processedMessages = new Set<string>();
+const MAX_PROCESSED = 500;
+
 export async function initDiscord(onMessage: MessageHandler): Promise<boolean> {
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
@@ -43,6 +47,14 @@ export async function initDiscord(onMessage: MessageHandler): Promise<boolean> {
   discordClient.on(Events.MessageCreate, (message) => {
     // Ignore bot messages
     if (message.author.bot) return;
+
+    // Deduplicate: skip if already processed
+    if (processedMessages.has(message.id)) return;
+    processedMessages.add(message.id);
+    if (processedMessages.size > MAX_PROCESSED) {
+      const first = processedMessages.values().next().value;
+      if (first) processedMessages.delete(first);
+    }
 
     const author = message.author.displayName || message.author.username;
     const content = message.content;
