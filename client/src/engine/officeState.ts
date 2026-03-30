@@ -34,9 +34,10 @@ export class OfficeState {
 
   constructor() {
     this.tiles = OFFICE_TILES;
-    this.furniture = buildFurnitureInstances(OFFICE_FURNITURE);
+    // Furniture will be empty until assets load and rebuild() is called
+    this.furniture = [];
     this.seats = buildSeats();
-    this.blockedTiles = buildBlockedTiles(this.furniture);
+    this.blockedTiles = new Set();
   }
 
   /** Rebuild furniture instances after assets are loaded. */

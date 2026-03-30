@@ -12,6 +12,7 @@ import {
   dbUpdateCase, dbUpdateAgent,
   dbCreateAgent, dbFireAgent, dbGetActiveAgents,
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
+  dbGetAgentTickets, dbGetAgentCases, dbGetRecentTicketsWithAgent, dbGetRecentAnomalies,
   supabase,
 } from './db/supabase.js';
 import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent, supportChat, generateBubble, reviewQA, reviewDevCase, generateLearningInsight } from './services/aiService.js';
@@ -168,6 +169,161 @@ async function buildPersonalizedPromptFull(role: string, agentName: string): Pro
   const tasksCompleted = agentRow?.data?.tasks_completed ?? 0;
   const learnings = learningRows.map(r => r.learning);
   return buildAgentPrompt(role, agentName, SOFTCOMHUB_KNOWLEDGE, personality, { tasksCompleted, learnings });
+}
+
+const FACTUAL_INSTRUCTION = `
+
+REGRA CRÍTICA — HONESTIDADE ABSOLUTA:
+- Você SÓ pode relatar atividades que aparecem no seu HISTÓRICO DE ATIVIDADES acima.
+- NÃO invente, NÃO assuma, NÃO crie atividades fictícias.
+- Se o operador perguntar sobre algo que não está no seu histórico, diga: "Não tenho registro disso no meu histórico de atividades."
+- Quando relatar o que fez, cite dados reais: IDs de tickets, nomes de autores, datas, classificações.
+- Seja direto e factual. Você é um profissional que reporta com base em evidências.`;
+
+/** Build real activity context for an agent based on their role */
+async function buildAgentActivityContext(agentName: string, role: string): Promise<string> {
+  try {
+    let context = '\n\n📋 HISTÓRICO DE ATIVIDADES REAIS (dados do banco de dados):\n';
+
+    if (role === 'suporte') {
+      const tickets = await dbGetAgentTickets(agentName, 15);
+      if (tickets.length === 0) {
+        context += 'Nenhum ticket atendido ainda.\n';
+      } else {
+        // Group by ticket_id to get unique tickets
+        const ticketMap = new Map<string, { messages: number; lastDate: string; ticketId: string }>();
+        for (const t of tickets) {
+          const key = t.ticket_id || t.channel_id;
+          const existing = ticketMap.get(key);
+          if (existing) {
+            existing.messages++;
+          } else {
+            ticketMap.set(key, { messages: 1, lastDate: t.created_at, ticketId: t.ticket_id || 'N/A' });
+          }
+        }
+        context += `Tickets atendidos (${ticketMap.size} conversas recentes):\n`;
+        for (const [channelId, info] of ticketMap) {
+          const date = new Date(info.lastDate).toLocaleDateString('pt-BR');
+          context += `  - Canal ${channelId.slice(0, 8)}... | ${info.messages} msgs | ${date}\n`;
+        }
+      }
+      // Also get recent tickets from queue to show what was classified
+      const recentTickets = await dbGetRecentTicketsWithAgent(10);
+      const relevantTickets = recentTickets.filter(t => t.status !== 'pending');
+      if (relevantTickets.length > 0) {
+        context += `\nÚltimos tickets no sistema:\n`;
+        for (const t of relevantTickets.slice(0, 10)) {
+          const date = new Date(t.created_at).toLocaleDateString('pt-BR');
+          context += `  - ${t.discord_author || 'Anônimo'}: "${(t.discord_message || '').slice(0, 50)}" | Status: ${t.status} | Classificação: ${t.classification || 'N/A'} | ${date}\n`;
+        }
+      }
+
+    } else if (role === 'qa' || role === 'qa_manager') {
+      const tickets = await dbGetAgentTickets(agentName, 10);
+      const cases = await dbGetAgentCases(agentName, 10);
+      const allCases = await dbGetCases();
+      if (tickets.length === 0 && allCases.length === 0) {
+        context += 'Nenhuma análise QA realizada ainda.\n';
+      } else {
+        if (allCases.length > 0) {
+          context += `Casos no sistema (${allCases.length} total):\n`;
+          for (const c of allCases.slice(0, 10)) {
+            const date = new Date(c.created_at).toLocaleDateString('pt-BR');
+            context += `  - ${c.caso_id} | Bug: ${c.bug_id || 'N/A'} | "${c.titulo}" | Status: ${c.status} | ${date}\n`;
+          }
+        }
+        if (tickets.length > 0) {
+          context += `\nMinhas últimas interações (${tickets.length}):\n`;
+          for (const t of tickets.slice(0, 5)) {
+            const date = new Date(t.created_at).toLocaleDateString('pt-BR');
+            context += `  - ${date}: "${t.message.slice(0, 80)}..."\n`;
+          }
+        }
+      }
+
+    } else if (role === 'dev' || role === 'dev_lead') {
+      const cases = await dbGetAgentCases(agentName, 10);
+      const allCases = await dbGetCases();
+      if (cases.length === 0 && allCases.length === 0) {
+        context += 'Nenhum caso de desenvolvimento aberto ainda.\n';
+      } else {
+        if (cases.length > 0) {
+          context += `Casos que EU criei (${cases.length}):\n`;
+          for (const c of cases) {
+            const date = new Date(c.created_at).toLocaleDateString('pt-BR');
+            context += `  - ${c.caso_id} | Bug: ${c.bug_id || 'N/A'} | "${c.titulo}" | Causa: ${(c.causa_raiz || '').slice(0, 60)} | Status: ${c.status} | ${date}\n`;
+          }
+        }
+        if (allCases.length > cases.length) {
+          const otherCases = allCases.filter(c => !cases.find(mc => mc.caso_id === c.caso_id));
+          if (otherCases.length > 0) {
+            context += `\nOutros casos no sistema (${otherCases.length}):\n`;
+            for (const c of otherCases.slice(0, 5)) {
+              const date = new Date(c.created_at).toLocaleDateString('pt-BR');
+              context += `  - ${c.caso_id} | "${c.titulo}" | Status: ${c.status} | Criado por: ${c.created_by || 'N/A'} | ${date}\n`;
+            }
+          }
+        }
+      }
+
+    } else if (role === 'log_analyzer') {
+      const anomalies = await dbGetRecentAnomalies(10);
+      const recentLogs = await dbGetRecentLogs(20);
+      if (anomalies.length === 0 && recentLogs.length === 0) {
+        context += 'Nenhuma anomalia detectada recentemente.\n';
+      } else {
+        if (anomalies.length > 0) {
+          context += `Anomalias/erros recentes (${anomalies.length}):\n`;
+          for (const a of anomalies) {
+            const date = new Date(a.created_at).toLocaleDateString('pt-BR');
+            context += `  - [${a.level}] ${a.service || 'sistema'}: "${a.message.slice(0, 80)}" | ${date}\n`;
+          }
+        }
+        if (recentLogs.length > 0) {
+          context += `\nÚltimos logs do sistema (${recentLogs.length}):\n`;
+          for (const l of recentLogs.slice(0, 10)) {
+            const date = new Date(l.created_at).toLocaleDateString('pt-BR');
+            context += `  - [${l.level}] ${l.message.slice(0, 80)} | ${date}\n`;
+          }
+        }
+      }
+
+    } else if (role === 'ceo') {
+      const allTickets = await dbGetAllTickets(20);
+      const allCases = await dbGetCases();
+      const agents = await dbGetActiveAgents();
+      const resolved = allTickets.filter(t => t.status === 'done').length;
+      const pending = allTickets.filter(t => t.status === 'pending').length;
+      const processing = allTickets.filter(t => t.status === 'processing').length;
+      const casesOpen = allCases.filter(c => c.status === 'open').length;
+      const casesResolved = allCases.filter(c => c.status === 'resolved').length;
+
+      context += `Resumo executivo:\n`;
+      context += `  - Agentes ativos: ${agents.length}\n`;
+      context += `  - Tickets total: ${allTickets.length} (${resolved} resolvidos, ${processing} em andamento, ${pending} pendentes)\n`;
+      context += `  - Casos DEV: ${allCases.length} total (${casesOpen} abertos, ${casesResolved} resolvidos)\n`;
+
+      if (allTickets.length > 0) {
+        context += `\nÚltimos tickets:\n`;
+        for (const t of allTickets.slice(0, 8)) {
+          const date = new Date(t.created_at).toLocaleDateString('pt-BR');
+          context += `  - ${t.discord_author || 'Anônimo'}: "${(t.discord_message || '').slice(0, 40)}" | ${t.status} | ${t.classification || 'N/A'} | ${date}\n`;
+        }
+      }
+      if (allCases.length > 0) {
+        context += `\nCasos recentes:\n`;
+        for (const c of allCases.slice(0, 5)) {
+          const date = new Date(c.created_at).toLocaleDateString('pt-BR');
+          context += `  - ${c.caso_id}: "${c.titulo}" | ${c.status} | ${date}\n`;
+        }
+      }
+    }
+
+    return context + FACTUAL_INSTRUCTION;
+  } catch (error) {
+    console.error('buildAgentActivityContext error:', error);
+    return '\n\n(Histórico de atividades indisponível no momento)' + FACTUAL_INSTRUCTION;
+  }
 }
 
 // CEO action-oriented prompt
@@ -1061,23 +1217,30 @@ io.on('connection', (socket) => {
         }))
       : getMemoryHistory(channelId, 20);
 
-    // Build the effective system prompt
+    // Build the effective system prompt with REAL activity data
     let effectivePrompt = systemPrompt;
     let effectiveMessage = message;
 
     // Build office context with agent roster for all roles
     const officeContext = buildOfficeContext();
 
+    // Fetch real activity context from database
+    const activityContext = await buildAgentActivityContext(agentName, agentRole);
+
     if (agentRole === 'ceo') {
       // Use the CEO action prompt with office state context
       effectivePrompt = CEO_ACTION_PROMPT
         .replace('{AGENT_NAME}', agentName)
-        .replace('{OFFICE_STATE}', officeContext);
+        .replace('{OFFICE_STATE}', officeContext)
+        + activityContext;
       // Append office state context to the user message
       effectiveMessage = message + '\n\n[Estado do escritório]\n' + officeContext;
     } else {
-      // All agents get the agent roster so they know who is in the office
-      effectivePrompt = systemPrompt + '\n\n[AGENTES NO ESCRITÓRIO]\n' + officeContext;
+      // Use full personalized prompt (with learnings + skill level) + activity data
+      const fullPrompt = await buildPersonalizedPromptFull(agentRole, agentName);
+      effectivePrompt = fullPrompt
+        + '\n\n[AGENTES NO ESCRITÓRIO]\n' + officeContext
+        + activityContext;
     }
 
     // Call AI
@@ -1112,8 +1275,10 @@ io.on('connection', (socket) => {
                 message: `Resumo, ${agent.name}?`,
               });
 
-              const summary = await chatWithAgent(agent.name, agent.systemPrompt,
-                'O CEO está pedindo seu resumo do dia. O que você fez hoje? Responda de forma breve e objetiva.', []);
+              const agentActivity = await buildAgentActivityContext(agent.name, agent.role);
+              const agentPrompt = agent.systemPrompt + agentActivity;
+              const summary = await chatWithAgent(agent.name, agentPrompt,
+                'O CEO está pedindo seu resumo do dia. O que você fez hoje? Responda de forma breve e objetiva, com base APENAS nas suas atividades reais registradas.', []);
 
               summaries.push(`**${agent.name} (${agent.role}):** ${summary}`);
 
@@ -1443,7 +1608,7 @@ async function start() {
 
   setInterval(() => syncRepo(), 30 * 60 * 1000);
   setInterval(runLogAnalysis, 5 * 60 * 1000);
-  setInterval(idleAgentLife, 22000); // Agent idle life every 22s
+  setInterval(idleAgentLife, 60000); // Agent idle life every 60s (was 22s — reduced to save AI credits)
 
   httpServer.listen(PORT, () => {
     console.log(`\n[Server] Running on http://localhost:${PORT}`);

@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/socket.io/:path*",
+      "destination": "http://147.93.67.238:3001/socket.io/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "http://147.93.67.238:3001/api/:path*"
+    }
+  ]
+}

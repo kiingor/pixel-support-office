@@ -262,6 +262,53 @@ export async function dbGetLearnings(agentName: string): Promise<Array<{ learnin
   return data || [];
 }
 
+// Agent activity queries — for injecting real data into chat context
+export async function dbGetAgentTickets(agentName: string, limit = 10) {
+  // Tickets where this agent was involved (conversations as agent)
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('channel_id, ticket_id, message, created_at')
+    .eq('author_name', agentName)
+    .eq('role', 'agent')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetAgentTickets error:', error);
+  return data || [];
+}
+
+export async function dbGetAgentCases(agentName: string, limit = 10) {
+  const { data, error } = await supabase
+    .from('cases')
+    .select('caso_id, bug_id, titulo, causa_raiz, status, created_at')
+    .eq('created_by', agentName)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetAgentCases error:', error);
+  return data || [];
+}
+
+export async function dbGetRecentTicketsWithAgent(limit = 20) {
+  // All recent tickets with their conversation agents
+  const { data, error } = await supabase
+    .from('queue')
+    .select('id, discord_author, discord_message, status, classification, result, created_at, completed_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetRecentTicketsWithAgent error:', error);
+  return data || [];
+}
+
+export async function dbGetRecentAnomalies(limit = 5) {
+  const { data, error } = await supabase
+    .from('system_logs')
+    .select('level, service, message, created_at')
+    .in('level', ['error', 'warn', 'anomaly'])
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetRecentAnomalies error:', error);
+  return data || [];
+}
+
 export async function dbIncrementTasksCompleted(agentName: string): Promise<number> {
   // Fetch current count first
   const { data: agent } = await supabase

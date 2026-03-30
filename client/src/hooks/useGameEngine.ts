@@ -11,7 +11,7 @@ import type { AgentRole } from '../types/agents';
 import { generateAgentPersonality, parsePersonalityBehavior } from '../types/agentProfile';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
-  window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : ''
 );
 
 function createDefaultAgents(officeState: OfficeState) {

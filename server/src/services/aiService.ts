@@ -14,6 +14,7 @@ const client = new Anthropic({
   maxRetries: 3, // auto-retry on 529 overloaded with exponential backoff
 });
 const MODEL = 'claude-sonnet-4-6';
+const CHEAP_MODEL = 'claude-haiku-4-5-20251001'; // For low-cost fallbacks (bubbles, logs)
 
 
 // Google Gemini — thinking layer (chat, bubbles, meetings, personality)
@@ -317,7 +318,7 @@ export async function reviewDevCase(
   }
 }
 
-// Log analyzer: analyze system logs
+// Log analyzer: analyze system logs (uses cheap model — runs every 5 min)
 export async function analyzeLogs(
   agentName: string,
   systemPrompt: string,
@@ -325,7 +326,7 @@ export async function analyzeLogs(
 ): Promise<{ hasAnomaly: boolean; report?: string }> {
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: CHEAP_MODEL,
       max_tokens: 1024,
       system: systemPrompt.replace('{AGENT_NAME}', agentName),
       messages: [{ role: 'user', content: `Logs recentes:\n${logs}` }],
@@ -434,10 +435,10 @@ export async function chatWithAgent(
     console.warn(`[OpenRouter] ${isRateLimit ? 'Rate limited' : 'Error'} — falling back to Claude`);
   }
 
-  // Fallback to Claude
+  // Fallback to Claude Haiku (cheap)
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: CHEAP_MODEL,
       max_tokens: 1024,
       system: systemPrompt.replace('{AGENT_NAME}', agentName),
       messages: conversationHistory.map(m => ({ role: m.role, content: m.content }))
@@ -476,10 +477,10 @@ Use português brasileiro informal.`;
     console.warn(`[OpenRouter] generateBubble ${error?.status === 429 ? 'rate limited' : 'error'} — falling back to Claude`);
   }
 
-  // Fallback to Claude (haiku-budget call)
+  // Fallback to Claude Haiku (cheap)
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: CHEAP_MODEL,
       max_tokens: 60,
       system: systemPrompt,
       messages: [{ role: 'user', content: situation }],
@@ -508,7 +509,7 @@ export async function generateLearningInsight(
 
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: CHEAP_MODEL,
       max_tokens: 150,
       system: `Você é um sistema de registro de aprendizado de agentes de IA.
 Seu único trabalho é extrair UM insight específico e concreto que o agente "${agentName}" (${role}, nível ${levelLabel}) acabou de aprender ao concluir uma tarefa.

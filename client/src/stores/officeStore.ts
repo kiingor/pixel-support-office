@@ -6,7 +6,7 @@ import type { OfficeState } from '../engine/officeState';
 import type { Socket } from 'socket.io-client';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
-  window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : ''
 );
 
 interface AgentInfo {

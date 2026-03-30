@@ -5,17 +5,21 @@ import { addBubble } from '../engine/characters';
 import type { SectorId, AgentRole } from '../types/agents';
 import { generateAgentPersonality } from '../types/agentProfile';
 
-// In production, connect to same host. In dev, use localhost:3001
+// In production, connect to same host (Vercel rewrites proxy to backend).
+// In dev, use localhost:3001 directly.
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
-  window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : ''
 );
 
 export function useWebSocket() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    // In production (Vercel), use polling only since rewrites don't support WebSocket upgrade.
+    // In dev, prefer WebSocket for lower latency.
+    const isProduction = window.location.hostname !== 'localhost';
     const socket = io(SERVER_URL, {
-      transports: ['websocket', 'polling'],
+      transports: isProduction ? ['polling'] : ['websocket', 'polling'],
       reconnection: true,
     });
 
