@@ -1,6 +1,7 @@
 import { TileType, TILE_SIZE, CharacterState, Direction } from '../types/office';
 import type { FurnitureInstance, SpriteData } from '../types/office';
 import type { Character } from '../types/agents';
+import type { SectorStats } from './officeState';
 import { getCachedSprite } from './spriteCache';
 import { getFloorSprite, getWallSprite } from '../sprites/tileSprites';
 import { BUBBLE_SPRITES } from '../sprites/bubbleSprites';
@@ -24,6 +25,7 @@ export function renderFrame(
   panX: number,
   panY: number,
   queueSize = 0,
+  sectorStats?: SectorStats,
 ): void {
   ctx.clearRect(0, 0, canvasW, canvasH);
 
@@ -88,6 +90,11 @@ export function renderFrame(
 
   // Render sector labels
   renderSectorLabels(ctx, zoom);
+
+  // Render sector KPIs
+  if (sectorStats && zoom >= 2) {
+    renderSectorKPIs(ctx, sectorStats, zoom);
+  }
 
   // Render queue alert badge
   if (queueSize > 0) {
@@ -390,6 +397,136 @@ function renderQueueAlert(
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
   ctx.fillText(String(queueSize), badgeX, badgeY);
+
+  ctx.restore();
+}
+
+// ===== SECTOR KPI DISPLAY =====
+
+interface KPILine {
+  icon: string;    // Color for the small square icon
+  label: string;
+  value: number;
+}
+
+function renderSectorKPIs(
+  ctx: CanvasRenderingContext2D,
+  stats: SectorStats,
+  zoom: number,
+): void {
+  const s = TILE_SIZE * zoom;
+
+  // Suporte KPIs
+  const suporteSector = SECTORS.RECEPTION;
+  renderKPIPanel(ctx, zoom, s, suporteSector.bounds.colEnd - 6, suporteSector.bounds.rowEnd - 4, [
+    { icon: '#4488ff', label: 'Tickets', value: stats.suporte.total },
+    { icon: '#2ecc71', label: 'Resolvidos', value: stats.suporte.resolvidos },
+    { icon: '#e74c3c', label: 'Na fila', value: stats.suporte.fila },
+    { icon: '#f39c12', label: 'Agentes', value: stats.suporte.agentes },
+  ]);
+
+  // QA KPIs
+  const qaSector = SECTORS.QA_ROOM;
+  renderKPIPanel(ctx, zoom, s, qaSector.bounds.colEnd - 4, qaSector.bounds.rowEnd - 4, [
+    { icon: '#aa44ff', label: 'Analisados', value: stats.qa.analisados },
+    { icon: '#2ecc71', label: 'Aprovados', value: stats.qa.aprovados },
+    { icon: '#f39c12', label: 'Agentes', value: stats.qa.agentes },
+  ]);
+
+  // DEV KPIs
+  const devSector = SECTORS.DEV_ROOM;
+  renderKPIPanel(ctx, zoom, s, devSector.bounds.colEnd - 4, devSector.bounds.rowEnd - 4, [
+    { icon: '#e74c3c', label: 'Abertos', value: stats.dev.casosAbertos },
+    { icon: '#2ecc71', label: 'Resolvidos', value: stats.dev.casosResolvidos },
+    { icon: '#f39c12', label: 'Agentes', value: stats.dev.agentes },
+  ]);
+
+  // Logs KPIs
+  const logsSector = SECTORS.LOGS_ROOM;
+  renderKPIPanel(ctx, zoom, s, logsSector.bounds.colEnd - 4, logsSector.bounds.rowEnd - 5, [
+    { icon: '#44cc88', label: 'Total logs', value: stats.logs.totalLogs },
+    { icon: '#2ecc71', label: 'Resolvidos', value: stats.logs.logsResolvidos },
+    { icon: '#e74c3c', label: 'Erros reais', value: stats.logs.errosReais },
+    { icon: '#f39c12', label: 'Agentes', value: stats.logs.agentes },
+  ]);
+
+  // CEO KPIs
+  const ceoSector = SECTORS.CEO_ROOM;
+  renderKPIPanel(ctx, zoom, s, ceoSector.bounds.colEnd - 5, ceoSector.bounds.rowStart + 1, [
+    { icon: '#4488ff', label: 'Ativos', value: stats.ceo.agentesAtivos },
+    { icon: '#2ecc71', label: 'Ocupados', value: stats.ceo.ocupados },
+    { icon: '#95a5a6', label: 'Ociosos', value: stats.ceo.ociosos },
+    { icon: '#e74c3c', label: 'Fila', value: stats.ceo.fila },
+  ]);
+}
+
+function renderKPIPanel(
+  ctx: CanvasRenderingContext2D,
+  zoom: number,
+  tileSize: number,
+  col: number,
+  row: number,
+  lines: KPILine[],
+): void {
+  const fontSize = Math.max(6, zoom * 3);
+  const lineHeight = fontSize + 3 * zoom;
+  const padX = 4 * zoom;
+  const padY = 3 * zoom;
+  const iconSize = Math.max(3, zoom * 2);
+
+  const x = col * tileSize;
+  const y = row * tileSize;
+  const panelW = 30 * zoom;
+  const panelH = padY * 2 + lines.length * lineHeight;
+
+  ctx.save();
+
+  // Panel background
+  ctx.fillStyle = 'rgba(10, 15, 30, 0.85)';
+  const r = 2 * zoom;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + panelW - r, y);
+  ctx.quadraticCurveTo(x + panelW, y, x + panelW, y + r);
+  ctx.lineTo(x + panelW, y + panelH - r);
+  ctx.quadraticCurveTo(x + panelW, y + panelH, x + panelW - r, y + panelH);
+  ctx.lineTo(x + r, y + panelH);
+  ctx.quadraticCurveTo(x, y + panelH, x, y + panelH - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Render each KPI line
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const ly = y + padY + i * lineHeight;
+    const lx = x + padX;
+
+    // Small colored square icon
+    ctx.fillStyle = line.icon;
+    ctx.fillRect(lx, ly + 1, iconSize, iconSize);
+
+    // Value (bold number)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(String(line.value), lx + iconSize + 3 * zoom, ly);
+
+    // Label (dimmer)
+    const numWidth = ctx.measureText(String(line.value)).width;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = `${fontSize * 0.85}px monospace`;
+    ctx.fillText(line.label, lx + iconSize + 3 * zoom + numWidth + 2 * zoom, ly + 0.5);
+    ctx.font = `bold ${fontSize}px monospace`;
+  }
 
   ctx.restore();
 }

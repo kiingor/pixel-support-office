@@ -128,6 +128,14 @@ interface OfficeStoreState {
 
 let msgCounter = 0;
 
+/** Sync sector stats to OfficeState for rendering KPIs */
+function syncSectorStats(stateGetter: () => OfficeStoreState): void {
+  const s = stateGetter();
+  if (s.officeState) {
+    s.officeState.updateStats(s.tickets, s.cases, s.queueSize);
+  }
+}
+
 export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   officeState: null,
   socket: null,
@@ -176,6 +184,7 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       }
     }
     set({ agents, agentProfiles: new Map(profiles) });
+    syncSectorStats(get);
   },
 
   addLogEntry: (message) => {
@@ -183,23 +192,33 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     set(state => ({ logEntries: [...state.logEntries.slice(-100), { time, message }] }));
   },
 
-  addTicket: (ticket) => set(state => {
-    // Prevent duplicates (ticket may already exist from initial state load)
-    if (state.tickets.some(t => t.id === ticket.id)) return state;
-    return { tickets: [...state.tickets, ticket] };
-  }),
-  updateTicket: (id, updates) => set(state => ({
-    tickets: state.tickets.map(t => t.id === id ? { ...t, ...updates } : t),
-  })),
+  addTicket: (ticket) => {
+    set(state => {
+      if (state.tickets.some(t => t.id === ticket.id)) return state;
+      return { tickets: [...state.tickets, ticket] };
+    });
+    syncSectorStats(get);
+  },
+  updateTicket: (id, updates) => {
+    set(state => ({
+      tickets: state.tickets.map(t => t.id === id ? { ...t, ...updates } : t),
+    }));
+    syncSectorStats(get);
+  },
 
-  addCase: (c) => set(state => {
-    // Prevent duplicates (case may already exist from initial state load)
-    if (state.cases.some(existing => existing.casoId === c.casoId)) return state;
-    return { cases: [...state.cases, c] };
-  }),
-  updateCase: (casoId, updates) => set(state => ({
-    cases: state.cases.map(c => c.casoId === casoId ? { ...c, ...updates } : c),
-  })),
+  addCase: (c) => {
+    set(state => {
+      if (state.cases.some(existing => existing.casoId === c.casoId)) return state;
+      return { cases: [...state.cases, c] };
+    });
+    syncSectorStats(get);
+  },
+  updateCase: (casoId, updates) => {
+    set(state => ({
+      cases: state.cases.map(c => c.casoId === casoId ? { ...c, ...updates } : c),
+    }));
+    syncSectorStats(get);
+  },
 
   hireAgent: (role) => {
     const os = get().officeState;
@@ -373,9 +392,12 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       .catch(e => console.error('Delete case error:', e));
   },
 
-  removeCase: (casoId) => set(state => ({
-    cases: state.cases.filter(c => c.casoId !== casoId),
-  })),
+  removeCase: (casoId) => {
+    set(state => ({
+      cases: state.cases.filter(c => c.casoId !== casoId),
+    }));
+    syncSectorStats(get);
+  },
 
   openCaseDetail: (casoId) => set({ selectedCaseId: casoId, caseDetailOpen: true }),
   closeCaseDetail: () => set({ caseDetailOpen: false, selectedCaseId: null }),
@@ -389,6 +411,7 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     if (os) {
       os.queueSize = size;
     }
+    syncSectorStats(get);
   },
 
   updateActiveConversation: (channelId, data) => {

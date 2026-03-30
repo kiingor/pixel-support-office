@@ -17,6 +17,14 @@ export interface OfficeEvent {
   data?: Record<string, unknown>;
 }
 
+export interface SectorStats {
+  suporte: { total: number; resolvidos: number; fila: number; agentes: number };
+  qa: { analisados: number; aprovados: number; agentes: number };
+  dev: { casosAbertos: number; casosResolvidos: number; agentes: number };
+  logs: { totalLogs: number; logsResolvidos: number; analisados: number; errosReais: number; agentes: number };
+  ceo: { agentesAtivos: number; ocupados: number; ociosos: number; fila: number };
+}
+
 export class OfficeState {
   tiles: TileType[][];
   furniture: FurnitureInstance[];
@@ -25,6 +33,13 @@ export class OfficeState {
   blockedTiles: Set<string>;
   tasks: Map<string, AgentTask> = new Map();
   queueSize = 0;
+  sectorStats: SectorStats = {
+    suporte: { total: 0, resolvidos: 0, fila: 0, agentes: 0 },
+    qa: { analisados: 0, aprovados: 0, agentes: 0 },
+    dev: { casosAbertos: 0, casosResolvidos: 0, agentes: 0 },
+    logs: { totalLogs: 0, logsResolvidos: 0, analisados: 0, errosReais: 0, agentes: 0 },
+    ceo: { agentesAtivos: 0, ocupados: 0, ociosos: 0, fila: 0 },
+  };
   private listeners: OfficeEventCallback[] = [];
   private pendingArrivals: Map<string, { targetSeat: string; callback?: () => void }> = new Map();
 
@@ -364,6 +379,59 @@ export class OfficeState {
     }
   }
 
+  /** Update sector stats from store data */
+  updateStats(tickets: Array<{status: string; classification?: string; discordAuthor?: string}>, cases: Array<{status: string}>, queueSize: number): void {
+    const chars = Array.from(this.characters.values());
+
+    // Suporte
+    const suporteAgents = chars.filter(c => c.role === 'suporte');
+    const totalTickets = tickets.length;
+    const resolvedTickets = tickets.filter(t => t.status === 'done').length;
+    this.sectorStats.suporte = {
+      total: totalTickets,
+      resolvidos: resolvedTickets,
+      fila: queueSize,
+      agentes: suporteAgents.length,
+    };
+
+    // QA
+    const qaAgents = chars.filter(c => c.role === 'qa' || c.role === 'qa_manager');
+    const bugTickets = tickets.filter(t => t.classification === 'bug');
+    this.sectorStats.qa = {
+      analisados: bugTickets.length,
+      aprovados: bugTickets.filter(t => t.status === 'done' || t.status === 'escalated').length,
+      agentes: qaAgents.length,
+    };
+
+    // DEV
+    const devAgents = chars.filter(c => c.role === 'dev' || c.role === 'dev_lead');
+    this.sectorStats.dev = {
+      casosAbertos: cases.filter(c => c.status === 'open' || c.status === 'in_progress').length,
+      casosResolvidos: cases.filter(c => c.status === 'resolved').length,
+      agentes: devAgents.length,
+    };
+
+    // Logs
+    const logAgents = chars.filter(c => c.role === 'log_analyzer');
+    const logTickets = tickets.filter(t => t.discordAuthor?.startsWith('[LOG]') || t.classification === 'log_analysis');
+    this.sectorStats.logs = {
+      totalLogs: logTickets.length,
+      logsResolvidos: logTickets.filter(t => t.status === 'done').length,
+      analisados: logTickets.length,
+      errosReais: logTickets.filter(t => t.status === 'escalated' || t.status === 'processing').length,
+      agentes: logAgents.length,
+    };
+
+    // CEO
+    const busyAgents = chars.filter(c => c.state === CharacterState.TYPE || c.state === CharacterState.TALK || c.state === CharacterState.WALK);
+    this.sectorStats.ceo = {
+      agentesAtivos: chars.length,
+      ocupados: busyAgents.length,
+      ociosos: chars.length - busyAgents.length,
+      fila: queueSize,
+    };
+  }
+
   render(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number): void {
     renderFrame(
       ctx,
@@ -376,6 +444,7 @@ export class OfficeState {
       this.panX,
       this.panY,
       this.queueSize,
+      this.sectorStats,
     );
   }
 
