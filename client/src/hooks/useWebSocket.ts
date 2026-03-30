@@ -111,6 +111,12 @@ export function useWebSocket() {
       useOfficeStore.getState().removeCase(data.casoId);
     });
 
+    // Error log stats from server (for KPIs)
+    socket.on('errorlogs:stats', (data: { total: number; naoAnalisados: number; analisados: number; resolvidos: number }) => {
+      const os = useOfficeStore.getState().officeState;
+      if (os) os.setLogStats(data);
+    });
+
     // Discord messages (show in logs)
     socket.on('discord:message', (data) => {
       useOfficeStore.getState().addLogEntry(`[Discord] ${data.author}: ${data.content.slice(0, 60)}`);

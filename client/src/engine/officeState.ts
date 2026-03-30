@@ -21,7 +21,7 @@ export interface SectorStats {
   suporte: { total: number; resolvidos: number; fila: number; agentes: number };
   qa: { analisados: number; aprovados: number; agentes: number };
   dev: { casosAbertos: number; casosResolvidos: number; agentes: number };
-  logs: { totalLogs: number; logsResolvidos: number; analisados: number; errosReais: number; agentes: number };
+  logs: { total: number; naoAnalisados: number; analisados: number; resolvidos: number; agentes: number };
   ceo: { agentesAtivos: number; ocupados: number; ociosos: number; fila: number };
 }
 
@@ -37,7 +37,7 @@ export class OfficeState {
     suporte: { total: 0, resolvidos: 0, fila: 0, agentes: 0 },
     qa: { analisados: 0, aprovados: 0, agentes: 0 },
     dev: { casosAbertos: 0, casosResolvidos: 0, agentes: 0 },
-    logs: { totalLogs: 0, logsResolvidos: 0, analisados: 0, errosReais: 0, agentes: 0 },
+    logs: { total: 0, naoAnalisados: 0, analisados: 0, resolvidos: 0, agentes: 0 },
     ceo: { agentesAtivos: 0, ocupados: 0, ociosos: 0, fila: 0 },
   };
   private listeners: OfficeEventCallback[] = [];
@@ -411,14 +411,10 @@ export class OfficeState {
       agentes: devAgents.length,
     };
 
-    // Logs
+    // Logs — stats come from server via socket (errorLogStats)
     const logAgents = chars.filter(c => c.role === 'log_analyzer');
-    const logTickets = tickets.filter(t => t.discordAuthor?.startsWith('[LOG]') || t.classification === 'log_analysis');
     this.sectorStats.logs = {
-      totalLogs: logTickets.length,
-      logsResolvidos: logTickets.filter(t => t.status === 'done').length,
-      analisados: logTickets.length,
-      errosReais: logTickets.filter(t => t.status === 'escalated' || t.status === 'processing').length,
+      ...this.sectorStats.logs, // Preserve server-sent stats
       agentes: logAgents.length,
     };
 
@@ -430,6 +426,11 @@ export class OfficeState {
       ociosos: chars.length - busyAgents.length,
       fila: queueSize,
     };
+  }
+
+  /** Set log stats from server (via socket event) */
+  setLogStats(stats: { total: number; naoAnalisados: number; analisados: number; resolvidos: number }): void {
+    this.sectorStats.logs = { ...stats, agentes: this.sectorStats.logs.agentes };
   }
 
   render(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number): void {

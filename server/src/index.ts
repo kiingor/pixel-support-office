@@ -14,6 +14,8 @@ import {
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   dbGetAgentTickets, dbGetAgentCases, dbGetRecentTicketsWithAgent, dbGetRecentAnomalies,
   dbDeleteCase, dbGetCaseConversation,
+  dbGetUnanalyzedErrorLogs, dbMarkErrorLogsAsAnalyzed, dbGetErrorLogStats,
+  type ErrorLog,
   supabase,
 } from './db/supabase.js';
 import { classifyTicket, analyzeQA, generateDevCase, analyzeLogs, chatWithAgent, supportChat, generateBubble, reviewQA, reviewDevCase, generateLearningInsight, classifyExternalLog } from './services/aiService.js';
@@ -1718,8 +1720,8 @@ async function start() {
   if (!discordOk) console.warn('Discord bot not connected.');
 
   setInterval(() => syncRepo(), 30 * 60 * 1000);
-  setInterval(runLogAnalysis, 5 * 60 * 1000);
-  setInterval(idleAgentLife, 120000); // Agent idle life every 120s (reduced from 60s — agents stay seated more)
+  // runLogAnalysis disabled — replaced by error_logs table monitoring
+  setInterval(idleAgentLife, 120000);
 
   // Start external log monitor
   startExternalLogMonitor();
@@ -1730,7 +1732,7 @@ async function start() {
     console.log(`[Server] Discord: ${discordOk ? '✅ Connected' : '❌ Not connected'}`);
     console.log(`[Server] Code: ${codeOk ? '✅ 187 files loaded' : '❌ Not loaded'}`);
     console.log(`[Server] AI: Claude Sonnet 4`);
-    console.log(`[Server] External Logs: ${externalLogMonitorActive ? '✅ Monitoring' : '❌ Not configured'}\n`);
+    console.log(`[Server] Error Logs: ${errorLogMonitorActive ? '✅ Monitoring' : '❌ Not configured'}\n`);
   });
 }
 
@@ -1861,344 +1863,141 @@ async function idleAgentLife() {
 }
 
 // =====================================================
-// EXTERNAL LOG MONITORING SYSTEM (SoftcomHub error_logs)
+// ERROR LOG MONITORING (reads from error_logs table in Supabase)
 // =====================================================
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+const reportedPatterns = new Map<string, string>();
+const logAnalysisQueue: ErrorLogGroup[] = [];
+const busyLogAgents = new Set<string>();
+let errorLogMonitorActive = false;
+let errorLogStats = { total: 0, analisados: 0, naoAnalisados: 0, resolvidos: 0 };
 
-const SOFTCOMHUB_SUPABASE_URL = process.env.SOFTCOMHUB_SUPABASE_URL || '';
-const SOFTCOMHUB_SUPABASE_KEY = process.env.SOFTCOMHUB_SUPABASE_KEY || '';
-const PROCESSED_LOGS_FILE = join(__dirname, '..', '..', 'data', 'processed-logs.json');
-
-// State
-const processedLogIds = new Set<string>();       // IDs already analyzed
-const reportedPatterns = new Map<string, string>(); // pattern → bugId (already reported errors)
-const logAnalysisQueue: ExternalLogGroup[] = [];
-const busyLogAgents = new Set<string>();          // agent names currently analyzing
-let externalLogMonitorActive = false;
-
-interface ExternalLog {
-  id: string;
-  tela: string;
-  rota: string;
-  log: string;
-  componente: string;
-  usuario_id: string | null;
-  usuario_nome: string | null;
-  resolvido: boolean;
-  criado_em: string;
-  metadata: Record<string, unknown>;
-}
-
-interface ExternalLogGroup {
-  pattern: string;        // Normalized log message (dedup key)
-  logIds: string[];       // All individual log IDs in this group
-  logs: ExternalLog[];    // Representative logs
-  ocorrencias: number;    // Total occurrences
-  usuarios: string[];     // Unique affected users
+interface ErrorLogGroup {
+  pattern: string;
+  logIds: string[];
+  ocorrencias: number;
+  usuarios: string[];
   tela: string;
   rota: string;
   componente: string;
   primeiraOcorrencia: string;
   ultimaOcorrencia: string;
-  rawLog: string;         // Full original log text
+  rawLog: string;
 }
 
-// Load processed IDs from disk on startup
-function loadProcessedLogIds(): void {
-  try {
-    if (existsSync(PROCESSED_LOGS_FILE)) {
-      const data = JSON.parse(readFileSync(PROCESSED_LOGS_FILE, 'utf-8'));
-      for (const id of data.ids || []) processedLogIds.add(id);
-      for (const [pattern, bugId] of Object.entries(data.patterns || {})) {
-        reportedPatterns.set(pattern, bugId as string);
-      }
-      console.log(`[ExternalLogs] Loaded ${processedLogIds.size} processed IDs, ${reportedPatterns.size} patterns`);
-    }
-  } catch { /* first run */ }
-}
-
-function saveProcessedLogIds(): void {
-  try {
-    const dir = join(__dirname, '..', '..', 'data');
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(PROCESSED_LOGS_FILE, JSON.stringify({
-      ids: Array.from(processedLogIds).slice(-2000), // Keep last 2000 IDs
-      patterns: Object.fromEntries(reportedPatterns),
-    }), 'utf-8');
-  } catch (err) {
-    console.error('[ExternalLogs] Failed to save processed IDs:', err);
-  }
-}
-
-// Normalize log message to create a dedup key
 function normalizeLogPattern(log: string): string {
   return log
-    .replace(/https?:\/\/[^\s]+/g, '<URL>')          // URLs
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<UUID>') // UUIDs
-    .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, '<TIMESTAMP>') // Timestamps
-    .replace(/at\s+\S+:\d+:\d+/g, 'at <SOURCE>')     // Stack trace lines
-    .replace(/\?dpl=dpl_\w+/g, '')                     // Vercel deploy IDs
-    .slice(0, 120)
-    .trim();
+    .replace(/https?:\/\/[^\s]+/g, '<URL>')
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<UUID>')
+    .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, '<TS>')
+    .replace(/at\s+\S+:\d+:\d+/g, 'at <SRC>')
+    .replace(/\?dpl=dpl_\w+/g, '')
+    .slice(0, 120).trim();
 }
 
-// Fetch logs from external SoftcomHub Supabase
-async function fetchExternalLogs(): Promise<ExternalLog[]> {
-  if (!SOFTCOMHUB_SUPABASE_URL || !SOFTCOMHUB_SUPABASE_KEY) return [];
-
-  try {
-    const url = `${SOFTCOMHUB_SUPABASE_URL}/rest/v1/error_logs?resolvido=eq.false&order=criado_em.desc&limit=100`;
-    const resp = await fetch(url, {
-      headers: {
-        'apikey': SOFTCOMHUB_SUPABASE_KEY,
-        'Authorization': `Bearer ${SOFTCOMHUB_SUPABASE_KEY}`,
-      },
-    });
-    if (!resp.ok) {
-      console.warn(`[ExternalLogs] Fetch failed: ${resp.status}`);
-      return [];
-    }
-    return await resp.json();
-  } catch (err) {
-    console.warn('[ExternalLogs] Fetch error:', (err as Error).message);
-    return [];
-  }
-}
-
-// Group logs by normalized message pattern
-function groupLogsByPattern(logs: ExternalLog[]): ExternalLogGroup[] {
-  const groups = new Map<string, ExternalLogGroup>();
-
+function groupErrorLogs(logs: ErrorLog[]): ErrorLogGroup[] {
+  const groups = new Map<string, ErrorLogGroup>();
   for (const log of logs) {
-    // Skip already processed
-    if (processedLogIds.has(log.id)) continue;
-
     const pattern = normalizeLogPattern(log.log);
-
     const existing = groups.get(pattern);
     if (existing) {
       existing.logIds.push(log.id);
       existing.ocorrencias++;
-      if (log.usuario_nome && !existing.usuarios.includes(log.usuario_nome)) {
-        existing.usuarios.push(log.usuario_nome);
-      }
+      if (log.usuario_nome && !existing.usuarios.includes(log.usuario_nome)) existing.usuarios.push(log.usuario_nome);
       if (log.criado_em < existing.primeiraOcorrencia) existing.primeiraOcorrencia = log.criado_em;
       if (log.criado_em > existing.ultimaOcorrencia) existing.ultimaOcorrencia = log.criado_em;
     } else {
       groups.set(pattern, {
-        pattern,
-        logIds: [log.id],
-        logs: [log],
-        ocorrencias: 1,
+        pattern, logIds: [log.id], ocorrencias: 1,
         usuarios: log.usuario_nome ? [log.usuario_nome] : [],
-        tela: log.tela,
-        rota: log.rota,
-        componente: log.componente,
-        primeiraOcorrencia: log.criado_em,
-        ultimaOcorrencia: log.criado_em,
+        tela: log.tela, rota: log.rota,
+        componente: log.componente || 'Unknown',
+        primeiraOcorrencia: log.criado_em, ultimaOcorrencia: log.criado_em,
         rawLog: log.log,
       });
     }
   }
-
   return Array.from(groups.values());
 }
 
-// Find available log analyzer agents
 function findIdleLogAgents(): string[] {
-  const allAgents = getActiveAgentsList();
-  return allAgents
-    .filter(a => a.role === 'log_analyzer' && !busyLogAgents.has(a.name))
-    .map(a => a.name);
+  return getActiveAgentsList().filter(a => a.role === 'log_analyzer' && !busyLogAgents.has(a.name)).map(a => a.name);
 }
 
-// Main polling function — runs every 5 seconds
-async function pollExternalLogs(): Promise<void> {
-  if (!externalLogMonitorActive) return;
-
-  // Fetch new logs
-  const logs = await fetchExternalLogs();
-  if (logs.length === 0) return;
-
-  // Group by pattern and filter already processed
-  const groups = groupLogsByPattern(logs);
-  if (groups.length === 0) return;
-
-  // Add new groups to queue (avoid duplicates in queue)
-  for (const group of groups) {
-    const alreadyQueued = logAnalysisQueue.some(q => q.pattern === group.pattern);
-    const alreadyReported = reportedPatterns.has(group.pattern);
-
-    if (alreadyReported) {
-      // Mark all IDs as processed (duplicate of already reported error)
-      for (const id of group.logIds) processedLogIds.add(id);
-      continue;
+async function pollErrorLogs(): Promise<void> {
+  if (!errorLogMonitorActive) return;
+  try {
+    errorLogStats = await dbGetErrorLogStats();
+    // Broadcast stats to all clients for KPI display
+    io.emit('errorlogs:stats', errorLogStats);
+    const logs = await dbGetUnanalyzedErrorLogs(100);
+    if (logs.length === 0) return;
+    const groups = groupErrorLogs(logs);
+    for (const group of groups) {
+      if (reportedPatterns.has(group.pattern)) {
+        await dbMarkErrorLogsAsAnalyzed(group.logIds);
+        continue;
+      }
+      if (!logAnalysisQueue.some(q => q.pattern === group.pattern)) logAnalysisQueue.push(group);
     }
-
-    if (!alreadyQueued) {
-      logAnalysisQueue.push(group);
+    const idleAgents = findIdleLogAgents();
+    const toProcess = Math.min(idleAgents.length, logAnalysisQueue.length);
+    for (let i = 0; i < toProcess; i++) {
+      const agentName = idleAgents[i];
+      const logGroup = logAnalysisQueue.shift()!;
+      busyLogAgents.add(agentName);
+      analyzeErrorLogGroup(agentName, logGroup).finally(() => busyLogAgents.delete(agentName));
     }
-  }
-
-  // Distribute to available agents
-  const idleAgents = findIdleLogAgents();
-  const toProcess = Math.min(idleAgents.length, logAnalysisQueue.length);
-
-  for (let i = 0; i < toProcess; i++) {
-    const agentName = idleAgents[i];
-    const logGroup = logAnalysisQueue.shift()!;
-    busyLogAgents.add(agentName);
-
-    // Process async (don't block the poll loop)
-    analyzeExternalLogGroup(agentName, logGroup).finally(() => {
-      busyLogAgents.delete(agentName);
-    });
-  }
+  } catch (err) { console.warn('[ErrorLogs] Poll error:', (err as Error).message); }
 }
 
-// Analyze a single log group with an agent
-async function analyzeExternalLogGroup(agentName: string, group: ExternalLogGroup): Promise<void> {
+async function analyzeErrorLogGroup(agentName: string, group: ErrorLogGroup): Promise<void> {
   try {
     emitLog(`${agentName} analisando log: ${group.rawLog.slice(0, 60)}... (${group.ocorrencias}x)`);
-
-    // Notify frontend: agent is busy analyzing
     io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: 'analyzing' });
-    io.emit('agent:status', { agentId: '', name: agentName, busy: true, task: 'log_analysis' });
+    io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: `Analisando: ${group.tela}/${group.rota} (${group.ocorrencias}x)`, type: 'processing', duration: 8000 });
+    io.emit('ticket:new', { id: `log_${Date.now()}`, discord_author: `[LOG] ${agentName}`, discord_message: `${group.rawLog.slice(0, 80)}... (${group.ocorrencias}x)`, status: 'processing', classification: 'log_analysis', created_at: new Date().toISOString() });
 
-    io.emit('agent:bubble', {
-      agentName,
-      role: 'log_analyzer',
-      text: `Analisando: ${group.tela}/${group.rota} (${group.ocorrencias}x)`,
-      type: 'processing',
-      duration: 8000,
+    const result = await classifyExternalLog(agentName, buildPersonalizedPrompt('log_analyzer', agentName), {
+      log: group.rawLog, tela: group.tela, rota: group.rota, componente: group.componente,
+      usuarios: group.usuarios, ocorrencias: group.ocorrencias,
+      primeiraOcorrencia: new Date(group.primeiraOcorrencia).toLocaleString('pt-BR'),
+      ultimaOcorrencia: new Date(group.ultimaOcorrencia).toLocaleString('pt-BR'),
     });
 
-    // Emit as a ticket in the queue so it shows in the Fila tab
-    io.emit('ticket:new', {
-      id: `log_${group.pattern.slice(0, 20)}_${Date.now()}`,
-      discord_author: `[LOG] ${agentName}`,
-      discord_message: `${group.rawLog.slice(0, 100)} (${group.ocorrencias}x, ${group.usuarios.length} usr)`,
-      status: 'processing',
-      source: 'logs',
-      classification: 'log_analysis',
-      created_at: new Date().toISOString(),
-    });
-
-    // Classify the log
-    const result = await classifyExternalLog(
-      agentName,
-      buildPersonalizedPrompt('log_analyzer', agentName),
-      {
-        log: group.rawLog,
-        tela: group.tela,
-        rota: group.rota,
-        componente: group.componente,
-        usuarios: group.usuarios,
-        ocorrencias: group.ocorrencias,
-        primeiraOcorrencia: new Date(group.primeiraOcorrencia).toLocaleString('pt-BR'),
-        ultimaOcorrencia: new Date(group.ultimaOcorrencia).toLocaleString('pt-BR'),
-      },
-    );
-
-    // Mark all IDs as processed
-    for (const id of group.logIds) processedLogIds.add(id);
-    saveProcessedLogIds();
+    await dbMarkErrorLogsAsAnalyzed(group.logIds);
 
     if (result.classification === 'real_error') {
-      // Real error → escalate to QA pipeline
       const bugId = `BUG-${++bugCounter}`;
       reportedPatterns.set(group.pattern, bugId);
-      saveProcessedLogIds();
-
-      emitLog(`${agentName}: Erro REAL detectado — ${result.titulo} (${group.ocorrencias}x, ${group.usuarios.length} usuários) → Escalando para QA`);
-
-      io.emit('agent:bubble', {
-        agentName,
-        role: 'log_analyzer',
-        text: `Erro real! Escalando ${bugId}`,
-        type: 'alert',
-        duration: 4000,
-      });
-
-      // Walk to QA room
-      io.emit('agent:walk_to', {
-        agentName,
-        role: 'log_analyzer',
-        toSectorId: 'QA_ROOM',
-        message: `Escalando ${bugId}`,
-      });
-
-      // Emit working status so frontend shows agent is busy
-      io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: `analyzing_log_${bugId}` });
-
-      // Create ticket in DB for tracking (use valid DB enum values)
-      const ticket = await dbCreateTicket({
-        type: 'qa',  // Valid: suporte, qa, dev
-        source: 'logs',  // Valid: discord, logs, demo, manual
-        discord_author: `Log Monitor (${agentName})`,
-        discord_message: `[LOG] ${result.titulo} — ${group.ocorrencias}x ocorrências, ${group.usuarios.length} usuários afetados. Tela: ${group.tela}, Rota: ${group.rota}`,
-      });
-
+      emitLog(`${agentName}: Erro REAL — ${result.titulo} (${group.ocorrencias}x, ${group.usuarios.length} usr) → QA`);
+      io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: `Erro real! ${bugId}`, type: 'alert', duration: 4000 });
+      io.emit('agent:walk_to', { agentName, role: 'log_analyzer', toSectorId: 'QA_ROOM', message: `Escalando ${bugId}` });
+      const ticket = await dbCreateTicket({ type: 'qa', source: 'logs', discord_author: `Log Monitor (${agentName})`, discord_message: `[LOG] ${result.titulo} — ${group.ocorrencias}x, ${group.usuarios.length} usr. ${group.tela} ${group.rota}` });
       if (ticket) {
         io.emit('ticket:new', ticket);
-
-        // Build bug data for QA pipeline
-        const bugData = {
-          acao: 'escalar_qa',
-          titulo: result.titulo,
-          descricao: `${result.descricao}\n\nOcorrências: ${group.ocorrencias}\nUsuários afetados: ${group.usuarios.join(', ')}\nTela: ${group.tela}\nRota: ${group.rota}\nComponente: ${group.componente}\nPeríodo: ${new Date(group.primeiraOcorrencia).toLocaleString('pt-BR')} - ${new Date(group.ultimaOcorrencia).toLocaleString('pt-BR')}\n\nLog original:\n${group.rawLog.slice(0, 800)}`,
-          prioridade: result.prioridade,
-          error_log_ids: group.logIds,
-        };
-
-        // Enter QA pipeline (same as Discord ticket escalation)
+        const bugData = { acao: 'escalar_qa', titulo: result.titulo, descricao: `${result.descricao}\n\nOcorrências: ${group.ocorrencias}\nUsuários: ${group.usuarios.join(', ')}\nTela: ${group.tela}\nRota: ${group.rota}\nComponente: ${group.componente}\nPeríodo: ${new Date(group.primeiraOcorrencia).toLocaleString('pt-BR')} - ${new Date(group.ultimaOcorrencia).toLocaleString('pt-BR')}\n\nLog:\n${group.rawLog.slice(0, 800)}`, prioridade: result.prioridade, error_log_ids: group.logIds };
         const channelId = `log_${bugId}`;
-        activeChannels.set(channelId, {
-          ticketId: ticket.id,
-          status: 'qa',
-          agentName,
-          agentId: '',
-          agentPrompt: '',
-        });
-
+        activeChannels.set(channelId, { ticketId: ticket.id, status: 'qa', agentName, agentId: '', agentPrompt: '' });
         await processQA(channelId, ticket.id, bugData, bugId, '');
       }
-
     } else if (result.classification === 'known_issue') {
-      emitLog(`${agentName}: Erro conhecido — ${result.titulo} (${group.ocorrencias}x) — Ignorando`);
       reportedPatterns.set(group.pattern, 'KNOWN');
-
-      io.emit('agent:bubble', {
-        agentName,
-        role: 'log_analyzer',
-        text: `Erro conhecido: ${result.titulo.slice(0, 25)}`,
-        type: 'done',
-        duration: 3000,
-      });
-
+      emitLog(`${agentName}: Conhecido — ${result.titulo} (${group.ocorrencias}x)`);
+      io.emit('agent:bubble', { agentName, role: 'log_analyzer', text: 'Conhecido', type: 'done', duration: 3000 });
     } else {
-      // false_positive
-      emitLog(`${agentName}: Falso positivo descartado — ${result.titulo}`);
+      emitLog(`${agentName}: Falso positivo — ${result.titulo}`);
     }
-
-  } catch (error) {
-    console.error(`[ExternalLogs] Error analyzing log group:`, error);
-    busyLogAgents.delete(agentName);
-  }
+  } catch (error) { console.error('[ErrorLogs] Analysis error:', error); }
 }
 
-// Start external log monitoring (called from start())
+function getErrorLogStats() { return errorLogStats; }
+
 function startExternalLogMonitor(): void {
-  if (!SOFTCOMHUB_SUPABASE_URL || !SOFTCOMHUB_SUPABASE_KEY) {
-    console.log('[ExternalLogs] ❌ Not configured (missing SOFTCOMHUB_SUPABASE_URL/KEY)');
-    return;
-  }
-
-  loadProcessedLogIds();
-  externalLogMonitorActive = true;
-  setInterval(pollExternalLogs, 5000); // Poll every 5 seconds
-  console.log('[ExternalLogs] ✅ Monitoring started (polling every 5s)');
+  errorLogMonitorActive = true;
+  setInterval(pollErrorLogs, 5000);
+  console.log('[ErrorLogs] ✅ Monitoring error_logs table (every 5s)');
 }
+
 
 start().catch(console.error);

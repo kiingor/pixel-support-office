@@ -440,9 +440,10 @@ function renderSectorKPIs(
 
   // Logs KPIs — bottom area of LOGS_ROOM
   renderKPIPanel(ctx, zoom, s, 23, 21, [
-    { icon: '#44cc88', label: 'Total', value: stats.logs.totalLogs },
-    { icon: '#2ecc71', label: 'Resolv.', value: stats.logs.logsResolvidos },
-    { icon: '#e74c3c', label: 'Erros', value: stats.logs.errosReais },
+    { icon: '#4488ff', label: 'Total', value: stats.logs.total },
+    { icon: '#e74c3c', label: 'Pendentes', value: stats.logs.naoAnalisados },
+    { icon: '#44cc88', label: 'Analisados', value: stats.logs.analisados },
+    { icon: '#2ecc71', label: 'Resolvidos', value: stats.logs.resolvidos },
     { icon: '#f39c12', label: 'Agentes', value: stats.logs.agentes },
   ]);
 

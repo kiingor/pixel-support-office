@@ -365,3 +365,57 @@ export async function dbIncrementTasksCompleted(agentName: string): Promise<numb
   await supabase.from('agents').update({ tasks_completed: newCount }).eq('id', agent.id);
   return newCount;
 }
+
+// --- External Error Logs (from error_logs table in same Supabase) ---
+
+export interface ErrorLog {
+  id: string;
+  tela: string;
+  rota: string;
+  log: string;
+  componente: string | null;
+  usuario_id: string | null;
+  usuario_nome: string | null;
+  navegador: string | null;
+  metadata: Record<string, unknown>;
+  resolvido: boolean;
+  criado_em: string;
+  resolvido_por: string | null;
+  caso_aberto: boolean;
+}
+
+/** Fetch error logs that haven't been analyzed yet (caso_aberto = false) */
+export async function dbGetUnanalyzedErrorLogs(limit = 100): Promise<ErrorLog[]> {
+  const { data, error } = await supabase
+    .from('error_logs')
+    .select('*')
+    .eq('caso_aberto', false)
+    .eq('resolvido', false)
+    .order('criado_em', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetUnanalyzedErrorLogs error:', error);
+  return (data as ErrorLog[]) || [];
+}
+
+/** Mark error logs as caso_aberto = true (case was created for them) */
+export async function dbMarkErrorLogsAsAnalyzed(ids: string[]): Promise<void> {
+  const { error } = await supabase
+    .from('error_logs')
+    .update({ caso_aberto: true })
+    .in('id', ids);
+  if (error) console.error('dbMarkErrorLogsAsAnalyzed error:', error);
+}
+
+/** Get error log counts for KPIs */
+export async function dbGetErrorLogStats(): Promise<{ total: number; analisados: number; naoAnalisados: number; resolvidos: number }> {
+  const { count: total } = await supabase.from('error_logs').select('*', { count: 'exact', head: true });
+  const { count: analisados } = await supabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('caso_aberto', true);
+  const { count: naoAnalisados } = await supabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('caso_aberto', false).eq('resolvido', false);
+  const { count: resolvidos } = await supabase.from('error_logs').select('*', { count: 'exact', head: true }).eq('resolvido', true);
+  return {
+    total: total || 0,
+    analisados: analisados || 0,
+    naoAnalisados: naoAnalisados || 0,
+    resolvidos: resolvidos || 0,
+  };
+}
