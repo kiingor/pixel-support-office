@@ -267,7 +267,63 @@ function renderAgentNames(
     // Black text
     ctx.fillStyle = '#000000';
     ctx.fillText(ch.name, cx, cy);
+
+    // Status indicator for working agents (TYPE = working at desk)
+    if (ch.state === CharacterState.TYPE || ch.state === CharacterState.TALK) {
+      renderBusyIndicator(ctx, cx, cy, zoom, ch.state, ch.role);
+    }
   }
+}
+
+/** Render a small animated pixel-art status icon next to the agent name */
+function renderBusyIndicator(
+  ctx: CanvasRenderingContext2D,
+  nameX: number,
+  nameY: number,
+  zoom: number,
+  state: CharacterState,
+  role: string,
+): void {
+  const s = Math.max(2, zoom * 1.5); // Pixel size
+  const x = nameX + 20 * zoom; // Right of name
+  const y = nameY - 4 * zoom;  // Aligned with name
+
+  ctx.save();
+
+  if (state === CharacterState.TYPE) {
+    // Typing indicator: small green monitor icon with blinking cursor
+    const blink = Math.sin(performance.now() / 400) > 0;
+
+    // Monitor frame
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(x, y, s * 5, s * 4);
+    ctx.fillStyle = role === 'log_analyzer' ? '#0a2a0a' : '#0a1a2a';
+    ctx.fillRect(x + s * 0.5, y + s * 0.5, s * 4, s * 2.5);
+
+    // Screen content (green for logs, blue for others)
+    const screenColor = role === 'log_analyzer' ? '#44cc88' : '#4488ff';
+    ctx.fillStyle = screenColor;
+    ctx.fillRect(x + s, y + s, s * 1.5, s * 0.5);
+    if (blink) {
+      ctx.fillRect(x + s * 3, y + s, s * 0.5, s * 0.5);
+    }
+    ctx.fillRect(x + s, y + s * 1.5, s * 2.5, s * 0.5);
+
+    // Stand
+    ctx.fillStyle = '#333';
+    ctx.fillRect(x + s * 2, y + s * 3.5, s, s * 0.5);
+  } else if (state === CharacterState.TALK) {
+    // Talking indicator: small speech wave icon
+    const wave = Math.sin(performance.now() / 300);
+
+    ctx.fillStyle = '#f0c040';
+    // Three bars like sound waves
+    ctx.fillRect(x, y + s, s * 0.8, s * 2);
+    ctx.fillRect(x + s * 1.2, y + s * 0.5 + wave * s * 0.3, s * 0.8, s * 3);
+    ctx.fillRect(x + s * 2.4, y + s * 0.8, s * 0.8, s * 1.5);
+  }
+
+  ctx.restore();
 }
 
 function renderSectorLabels(

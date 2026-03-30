@@ -2101,12 +2101,27 @@ async function analyzeExternalLogGroup(agentName: string, group: ExternalLogGrou
   try {
     emitLog(`${agentName} analisando log: ${group.rawLog.slice(0, 60)}... (${group.ocorrencias}x)`);
 
+    // Notify frontend: agent is busy analyzing
+    io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: 'analyzing' });
+    io.emit('agent:status', { agentId: '', name: agentName, busy: true, task: 'log_analysis' });
+
     io.emit('agent:bubble', {
       agentName,
       role: 'log_analyzer',
-      text: `Analisando erro: ${group.tela}/${group.rota}`,
+      text: `Analisando: ${group.tela}/${group.rota} (${group.ocorrencias}x)`,
       type: 'processing',
-      duration: 5000,
+      duration: 8000,
+    });
+
+    // Emit as a ticket in the queue so it shows in the Fila tab
+    io.emit('ticket:new', {
+      id: `log_${group.pattern.slice(0, 20)}_${Date.now()}`,
+      discord_author: `[LOG] ${agentName}`,
+      discord_message: `${group.rawLog.slice(0, 100)} (${group.ocorrencias}x, ${group.usuarios.length} usr)`,
+      status: 'processing',
+      source: 'logs',
+      classification: 'log_analysis',
+      created_at: new Date().toISOString(),
     });
 
     // Classify the log
@@ -2153,12 +2168,15 @@ async function analyzeExternalLogGroup(agentName: string, group: ExternalLogGrou
         message: `Escalando ${bugId}`,
       });
 
-      // Create ticket in DB for tracking
+      // Emit working status so frontend shows agent is busy
+      io.emit('agent:working', { role: 'log_analyzer', agentName, agentId: '', action: `analyzing_log_${bugId}` });
+
+      // Create ticket in DB for tracking (use valid DB enum values)
       const ticket = await dbCreateTicket({
-        type: 'log_error',
-        source: 'external_logs',
+        type: 'qa',  // Valid: suporte, qa, dev
+        source: 'logs',  // Valid: discord, logs, demo, manual
         discord_author: `Log Monitor (${agentName})`,
-        discord_message: `${result.titulo} — ${group.ocorrencias}x ocorrências, ${group.usuarios.length} usuários afetados. Tela: ${group.tela}, Rota: ${group.rota}`,
+        discord_message: `[LOG] ${result.titulo} — ${group.ocorrencias}x ocorrências, ${group.usuarios.length} usuários afetados. Tela: ${group.tela}, Rota: ${group.rota}`,
       });
 
       if (ticket) {
