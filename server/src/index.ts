@@ -621,7 +621,18 @@ app.delete('/api/cases/:casoId', async (req, res) => {
 app.get('/api/cases/:casoId/conversation', async (req, res) => {
   const { casoId } = req.params;
   const messages = await dbGetCaseConversation(casoId);
-  res.json({ casoId, messages });
+  // Enrich messages with agent role labels
+  const ROLE_LABELS: Record<string, string> = { suporte: 'Suporte', qa: 'QA', qa_manager: 'Ger. QA', dev: 'DEV', dev_lead: 'Tech Lead', log_analyzer: 'Logs', ceo: 'CEO' };
+  const enriched = messages.map((m: any) => {
+    let roleLabel = '';
+    if (m.role === 'agent' && m.author_name) {
+      // Find the agent's role from DB or known names
+      const agent = getActiveAgentsList().find(a => a.name === m.author_name);
+      if (agent) roleLabel = ROLE_LABELS[agent.role] || agent.role;
+    }
+    return { ...m, roleLabel };
+  });
+  res.json({ casoId, messages: enriched });
 });
 
 // Rename agent

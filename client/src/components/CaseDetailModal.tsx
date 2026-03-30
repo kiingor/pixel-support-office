@@ -10,6 +10,7 @@ interface ConversationMessage {
   author_name: string;
   message: string;
   created_at: string;
+  roleLabel?: string;
 }
 
 export function CaseDetailModal() {
@@ -102,7 +103,10 @@ export function CaseDetailModal() {
             {messages.map((m, i) => (
               <div key={i} className={`msg ${m.role === 'agent' ? 'msg-agent' : 'msg-user'}`}>
                 <div className="msg-header">
-                  <span className="msg-author">{m.author_name}</span>
+                  <span className="msg-author">
+                    {m.author_name}
+                    {m.roleLabel && <span style={{ color: '#888', fontWeight: 400 }}> - {m.roleLabel}</span>}
+                  </span>
                   <span className="msg-time">
                     {new Date(m.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
                   </span>

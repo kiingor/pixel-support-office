@@ -254,7 +254,7 @@ export async function dbGetCaseConversation(casoId: string) {
 
   const { data: messages } = await supabase
     .from('conversations')
-    .select('role, author_name, message, created_at')
+    .select('role, author_name, message, created_at, agent_id')
     .eq('channel_id', channelId)
     .order('created_at', { ascending: true })
     .limit(50);

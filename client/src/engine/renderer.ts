@@ -257,25 +257,36 @@ function renderAgentNames(
 ): void {
   if (zoom < 2) return; // Too small to read
 
-  const fontSize = Math.max(7, zoom * 3.5);
+  const fontSize = Math.max(9, zoom * 5);
   ctx.font = `bold ${fontSize}px monospace`;
   ctx.textAlign = 'center';
+
+  const ROLE_SHORT: Record<string, string> = {
+    ceo: 'CEO', suporte: 'Suporte', qa: 'QA', qa_manager: 'Ger.QA',
+    dev: 'DEV', dev_lead: 'TechLead', log_analyzer: 'Logs',
+  };
 
   for (const ch of characters) {
     const cx = Math.round(ch.pixelX * zoom + (TILE_SIZE * zoom) / 2);
     // Name ABOVE the character
-    const cy = Math.round((ch.pixelY - TILE_SIZE) * zoom - 4 * zoom);
+    const cy = Math.round((ch.pixelY - TILE_SIZE) * zoom - 6 * zoom);
 
-    // White outline for readability on dark backgrounds
+    // Agent name (bold, larger)
+    ctx.font = `bold ${fontSize}px monospace`;
     ctx.strokeStyle = '#ffffffaa';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.strokeText(ch.name, cx, cy);
-
-    // Black text
     ctx.fillStyle = '#000000';
     ctx.fillText(ch.name, cx, cy);
 
-    // Status indicator for working agents (TYPE = working at desk)
+    // Role label below name (smaller, colored)
+    const roleSize = Math.max(7, zoom * 3.5);
+    ctx.font = `bold ${roleSize}px monospace`;
+    const roleColor = ROLE_COLORS[ch.role] || '#888';
+    ctx.fillStyle = roleColor;
+    ctx.fillText(ROLE_SHORT[ch.role] || ch.role, cx, cy + fontSize * 0.9);
+
+    // Status indicator for working agents
     if (ch.state === CharacterState.TYPE || ch.state === CharacterState.TALK) {
       renderBusyIndicator(ctx, cx, cy, zoom, ch.state, ch.role);
     }

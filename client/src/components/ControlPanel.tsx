@@ -22,9 +22,11 @@ export function ControlPanel() {
   const {
     agents, selectedAgentId, selectAgent, openChat,
     logEntries, tickets, cases, chatAgentId, resolveCase, deleteCase,
-    queueSize, meetingActive, openCaseDetail,
+    queueSize, meetingActive, openCaseDetail, renameAgent,
   } = useOfficeStore();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   if (meetingActive) return <MeetingChat />;
   if (chatAgentId) return <AgentChat />;
@@ -83,17 +85,43 @@ export function ControlPanel() {
               <div
                 key={agent.id}
                 className={`panel-card ${selectedAgentId === agent.id ? 'active' : ''}`}
-                onClick={() => { selectAgent(agent.id); openChat(agent.id); }}
+                onClick={() => { if (renamingId !== agent.id) { selectAgent(agent.id); openChat(agent.id); } }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div className="status-dot" style={{ background: ROLE_COLORS[agent.role], boxShadow: `0 0 6px ${ROLE_COLORS[agent.role]}66` }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{agent.name}</div>
+                    {renamingId === agent.id ? (
+                      <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+                        <input
+                          value={renameValue}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && renameValue.trim()) {
+                              renameAgent(agent.id, renameValue.trim());
+                              setRenamingId(null);
+                            }
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          autoFocus
+                          style={{ background: '#0a1428', border: '1px solid #4488ff', borderRadius: 3, color: '#fff', padding: '2px 6px', fontSize: 12, width: '100%' }}
+                        />
+                        <button className="btn btn-sm btn-primary" onClick={() => { if (renameValue.trim()) { renameAgent(agent.id, renameValue.trim()); setRenamingId(null); } }}>OK</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{agent.name}</span>
+                        <span
+                          onClick={e => { e.stopPropagation(); setRenamingId(agent.id); setRenameValue(agent.name); }}
+                          style={{ fontSize: 10, color: '#445', cursor: 'pointer', padding: '0 3px' }}
+                          title="Renomear"
+                        >&#9998;</span>
+                      </div>
+                    )}
                     <div style={{ fontSize: 10, color: '#5a7a9a' }}>
                       {ROLE_LABELS[agent.role]} - <span style={{ color: agent.status === 'type' ? '#2ecc71' : '#f39c12' }}>{agent.status}</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 12, color: '#334' }}>{'>'}</span>
+                  {renamingId !== agent.id && <span style={{ fontSize: 12, color: '#334' }}>{'>'}</span>}
                 </div>
               </div>
             ))}
