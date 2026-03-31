@@ -157,7 +157,12 @@ export function ControlPanel() {
         {activeTab === 'Casos' && (
           <div>
             {cases.length === 0 && <div className="text-muted">Nenhum caso aberto</div>}
-            {cases.map(c => {
+            {[...cases].sort((a, b) => {
+              // Sort by case number descending (most recent first)
+              const numA = parseInt(a.casoId.replace(/\D/g, '')) || 0;
+              const numB = parseInt(b.casoId.replace(/\D/g, '')) || 0;
+              return numB - numA;
+            }).map(c => {
               const isOpen = c.status !== 'resolved';
               return (
                 <div
