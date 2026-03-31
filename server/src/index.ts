@@ -828,33 +828,43 @@ async function handleSupportMessage(channelId: string, author: string, message: 
   if (jsonMatch) {
     try {
       const bugData = JSON.parse(jsonMatch[0]);
+      const isMelhoria = bugData.tipo === 'melhoria' || (bugData.titulo || '').toUpperCase().startsWith('MELHORIA');
+      const classification = isMelhoria ? 'melhoria' : 'bug';
 
       // Save agent message
+      const escalationMsg = isMelhoria
+        ? `Obrigado pela sugestão! Vou encaminhar para o time técnico avaliar a viabilidade dessa melhoria. Você será informado(a) sobre o andamento.`
+        : `Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`;
+
       await dbSaveMessage({
         channel_id: channelId,
         ticket_id: ticketId,
         agent_id: resolvedAgentId || 'support',
         role: 'agent',
         author_name: agentName,
-        message: `Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`,
+        message: escalationMsg,
       });
 
       // Send to Discord
-      await sendDiscordMessage(channelId,
-        `🤖 **${agentName}:** Obrigado pelas informações! Identifiquei um problema que precisa ser analisado pela equipe técnica. Vou encaminhar para o nosso time de QA. Você será informado(a) sobre o progresso.`
-      );
+      await sendDiscordMessage(channelId, `🤖 **${agentName}:** ${escalationMsg}`);
 
       // Update ticket
       await dbUpdateTicket(ticketId, {
         status: 'escalated',
-        classification: 'bug',
+        classification,
         result: bugData,
       });
 
       const bugId = `BUG-${++bugCounter}`;
       io.emit('ticket:escalated', { ticketId, bugId, classification: bugData });
-      emitLog(`${agentName}: Bug detectado e escalado para QA`);
-      dbLogAgentActivity(agentName, 'suporte', 'Escalou bug', `Detectou bug ${bugId} e escalou para QA. Título: ${bugData.titulo || 'N/A'}`).catch(() => {});
+
+      if (isMelhoria) {
+        emitLog(`${agentName}: Sugestão de melhoria recebida e escalada para QA`);
+        dbLogAgentActivity(agentName, 'suporte', 'Escalou melhoria', `Sugestão ${bugId}: ${bugData.titulo || 'N/A'}`).catch(() => {});
+      } else {
+        emitLog(`${agentName}: Bug detectado e escalado para QA`);
+        dbLogAgentActivity(agentName, 'suporte', 'Escalou bug', `Detectou bug ${bugId}: ${bugData.titulo || 'N/A'}`).catch(() => {});
+      }
 
       // Emit visual walk event: agent walks from support to QA sector
       io.emit('agent:walk_to', {
@@ -863,7 +873,11 @@ async function handleSupportMessage(channelId: string, author: string, message: 
         toSectorId: 'QA_ROOM',
         message: `${bugId} → QA`,
       });
-      io.emit('agent:bubble', { agentName, role: 'suporte', text: `${bugId} → Enviando para QA`, type: 'handoff', duration: 5000 });
+      io.emit('agent:bubble', {
+        agentName, role: 'suporte',
+        text: isMelhoria ? `💡 Melhoria ${bugId} → QA` : `${bugId} → Enviando para QA`,
+        type: 'handoff', duration: 5000,
+      });
 
       // Update channel status
       const channelInfo = activeChannels.get(channelId)!;
