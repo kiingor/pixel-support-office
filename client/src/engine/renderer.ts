@@ -562,8 +562,8 @@ function renderSectorKPIs(
     { icon: '#f39c12', label: 'Agentes', value: stats.dev.agentes },
   ]);
 
-  // Logs KPIs — bottom area of LOGS_ROOM
-  renderKPIPanel(ctx, zoom, s, 23, 21, [
+  // Logs KPIs — bottom-right of expanded LOGS_ROOM
+  renderKPIPanel(ctx, zoom, s, 27, 21, [
     { icon: '#4488ff', label: 'Total', value: stats.logs.total },
     { icon: '#e74c3c', label: 'Pendentes', value: stats.logs.naoAnalisados },
     { icon: '#44cc88', label: 'Analisados', value: stats.logs.analisados },
@@ -571,8 +571,8 @@ function renderSectorKPIs(
     { icon: '#f39c12', label: 'Agentes', value: stats.logs.agentes },
   ]);
 
-  // CEO KPIs — right side of CEO_ROOM (away from desk)
-  renderKPIPanel(ctx, zoom, s, 35, 18, [
+  // CEO KPIs — compact CEO room
+  renderKPIPanel(ctx, zoom, s, 34, 19, [
     { icon: '#4488ff', label: 'Ativos', value: stats.ceo.agentesAtivos },
     { icon: '#2ecc71', label: 'Ocupados', value: stats.ceo.ocupados },
     { icon: '#95a5a6', label: 'Ociosos', value: stats.ceo.ociosos },

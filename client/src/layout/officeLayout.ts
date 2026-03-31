@@ -16,7 +16,7 @@ export const OFFICE_ROWS = 26;
 // Layout:
 // TOP:    SUPORTE (cols 1-22)  |  REUNIAO (cols 23-38)
 // HALL:   (rows 10-11)
-// BOTTOM: QA (1-10) | DEV (11-20) | LOGS (21-28) | CEO (29-38)
+// BOTTOM: QA (1-10) | DEV (11-20) | LOGS (21-32) | CEO (33-38)
 export const OFFICE_TILES: TileType[][] = [
   // Row 0: top wall
   [W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W],
@@ -33,20 +33,20 @@ export const OFFICE_TILES: TileType[][] = [
   // Rows 10-11: Hallway
   [W,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,W],
   [W,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,H,W],
-  // Rows 12-24: QA (1-10) | DEV (11-20) | LOGS (21-28) | CEO (29-38)
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
-  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,C,C,C,C,C,C,C,C,C,C,W],
+  // Rows 12-24: QA (1-10) | DEV (11-20) | LOGS (21-32) | CEO (33-38)
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
+  [W,Q,Q,Q,Q,Q,Q,Q,Q,Q,Q,D,D,D,D,D,D,D,D,D,D,L,L,L,L,L,L,L,L,L,L,L,L,C,C,C,C,C,C,W],
   // Row 25: bottom wall
   [W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W],
 ];
@@ -126,23 +126,26 @@ export const OFFICE_FURNITURE: PlacedFurniture[] = [
   { typeId: 'PLANT', col: 20, row: 23 },
   { typeId: 'BIN', col: 20, row: 24 },
 
-  // ============ LOGS (5 PCs) - cols 21-28, rows 12-24 ============
+  // ============ LOGS (cols 21-32, rows 12-24) — expanded ============
   { typeId: 'DESK_FRONT', col: 21, row: 12 }, { typeId: 'PC_FRONT_ON_1', col: 22, row: 12 },
   { typeId: 'DESK_FRONT', col: 25, row: 12 }, { typeId: 'PC_FRONT_ON_2', col: 26, row: 12 },
+  { typeId: 'DESK_FRONT', col: 29, row: 12 }, { typeId: 'PC_FRONT_ON_3', col: 30, row: 12 },
   { typeId: 'DESK_FRONT', col: 21, row: 16 }, { typeId: 'PC_FRONT_ON_3', col: 22, row: 16 },
   { typeId: 'DESK_FRONT', col: 25, row: 16 }, { typeId: 'PC_FRONT_ON_1', col: 26, row: 16 },
+  { typeId: 'DESK_FRONT', col: 29, row: 16 }, { typeId: 'PC_FRONT_ON_2', col: 30, row: 16 },
   { typeId: 'DESK_FRONT', col: 21, row: 20 }, { typeId: 'PC_FRONT_ON_2', col: 22, row: 20 },
+  { typeId: 'DESK_FRONT', col: 25, row: 20 }, { typeId: 'PC_FRONT_ON_3', col: 26, row: 20 },
   // Decor
-  { typeId: 'CACTUS', col: 28, row: 23 },
+  { typeId: 'CACTUS', col: 32, row: 23 },
+  { typeId: 'PLANT', col: 21, row: 23 },
 
-  // ============ CEO (cols 29-38, rows 12-24) ============
-  { typeId: 'DESK_FRONT', col: 32, row: 14 }, { typeId: 'PC_FRONT_ON_1', col: 33, row: 14 },
+  // ============ CEO (cols 33-38, rows 12-24) — compact ============
+  { typeId: 'DESK_FRONT', col: 34, row: 14 }, { typeId: 'PC_FRONT_ON_1', col: 35, row: 14 },
   // Decor
-  { typeId: 'BOOKSHELF', col: 29, row: 12 },
-  { typeId: 'BOOKSHELF', col: 36, row: 12 },
-  { typeId: 'PLANT', col: 29, row: 23 },
+  { typeId: 'BOOKSHELF', col: 33, row: 12 },
+  { typeId: 'PLANT', col: 33, row: 23 },
   { typeId: 'PLANT', col: 38, row: 23 },
-  { typeId: 'SOFA_FRONT', col: 34, row: 21 },
+  { typeId: 'SOFA_FRONT', col: 36, row: 21 },
 
   // ============ HALLWAY DECOR ============
   { typeId: 'PLANT_2', col: 5, row: 10 },

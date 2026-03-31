@@ -85,25 +85,28 @@ export const SECTORS: Record<SectorId, SectorConfig> = {
     id: 'LOGS_ROOM',
     name: 'Logs',
     labelColor: '#44cc88',
-    bounds: { colStart: 21, colEnd: 28, rowStart: 12, rowEnd: 24 },
+    bounds: { colStart: 21, colEnd: 32, rowStart: 12, rowEnd: 24 },
     seatPositions: [
       { col: 22, row: 14, facingDir: Direction.UP },
       { col: 26, row: 14, facingDir: Direction.UP },
+      { col: 30, row: 14, facingDir: Direction.UP },
       { col: 22, row: 18, facingDir: Direction.UP },
       { col: 26, row: 18, facingDir: Direction.UP },
+      { col: 30, row: 18, facingDir: Direction.UP },
       { col: 22, row: 22, facingDir: Direction.UP },
+      { col: 26, row: 22, facingDir: Direction.UP },
     ],
-    doorPosition: { col: 24, row: 11 },
+    doorPosition: { col: 26, row: 11 },
   },
   CEO_ROOM: {
     id: 'CEO_ROOM',
     name: 'CEO',
     labelColor: '#f0c040',
-    bounds: { colStart: 29, colEnd: 38, rowStart: 12, rowEnd: 24 },
+    bounds: { colStart: 33, colEnd: 38, rowStart: 12, rowEnd: 24 },
     seatPositions: [
-      { col: 33, row: 16, facingDir: Direction.UP },
+      { col: 35, row: 16, facingDir: Direction.UP },
     ],
-    doorPosition: { col: 33, row: 11 },
+    doorPosition: { col: 35, row: 11 },
   },
 };
 
