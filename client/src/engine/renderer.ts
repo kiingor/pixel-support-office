@@ -69,10 +69,51 @@ export function renderFrame(
     const drawX = Math.round(ch.pixelX * zoom);
     const drawY = Math.round((ch.pixelY - TILE_SIZE + sittingOffset) * zoom);
     const charZY = ch.pixelY + TILE_SIZE;
+    const isWorking = ch.state === CharacterState.TYPE || ch.state === CharacterState.TALK;
+    const isWalking = ch.state === CharacterState.WALK;
 
     drawables.push({
       zY: charZY,
-      draw: (c) => { c.drawImage(cached, drawX, drawY); },
+      draw: (c) => {
+        // Pulsing aura when agent is working
+        if (isWorking && zoom >= 2) {
+          const pulse = 0.3 + 0.15 * Math.sin(performance.now() / 600);
+          const auraColor = ROLE_COLORS[ch.role] || '#4488ff';
+          const cx = drawX + cached.width / 2;
+          const cy = drawY + cached.height / 2;
+          const rx = cached.width * 0.55;
+          const ry = cached.height * 0.45;
+
+          c.save();
+          c.globalAlpha = pulse;
+          c.beginPath();
+          c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          c.fillStyle = auraColor;
+          c.fill();
+          c.globalAlpha = pulse * 0.6;
+          c.beginPath();
+          c.ellipse(cx, cy, rx * 1.3, ry * 1.3, 0, 0, Math.PI * 2);
+          c.fillStyle = auraColor;
+          c.fill();
+          c.restore();
+        }
+        // Walking trail when moving between sectors
+        if (isWalking && zoom >= 2) {
+          const trailAlpha = 0.15 + 0.05 * Math.sin(performance.now() / 200);
+          c.save();
+          c.globalAlpha = trailAlpha;
+          c.fillStyle = '#ffffff';
+          // Small dots behind the character
+          for (let i = 1; i <= 3; i++) {
+            const dotSize = (4 - i) * zoom * 0.5;
+            c.beginPath();
+            c.arc(drawX + cached.width / 2, drawY + cached.height + i * 3 * zoom, dotSize, 0, Math.PI * 2);
+            c.fill();
+          }
+          c.restore();
+        }
+        c.drawImage(cached, drawX, drawY);
+      },
     });
   }
 

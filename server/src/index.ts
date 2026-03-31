@@ -847,9 +847,9 @@ async function handleSupportMessage(channelId: string, author: string, message: 
         role: 'suporte',
         agentName,
         toSectorId: 'QA_ROOM',
-        message: `Escalando ${bugId} para QA`,
+        message: `${bugId} → QA`,
       });
-      await emitPersonalityBubble(agentName, 'suporte', 'Você detectou um bug e vai encaminhar para o time de QA analisar', 'handoff', 3000);
+      io.emit('agent:bubble', { agentName, role: 'suporte', text: `${bugId} → Enviando para QA`, type: 'handoff', duration: 5000 });
 
       // Update channel status
       const channelInfo = activeChannels.get(channelId)!;
@@ -952,7 +952,7 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
   });
 
   emitLog(`${qaAgentName}: Análise pronta — enviando para ${qaManagerName} revisar...`);
-  await emitPersonalityBubble(qaAgentName, 'qa', 'Você terminou a análise do bug e vai enviar para o gerente revisar', 'handoff', 3000);
+  io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Enviando análise para o gerente', type: 'handoff', duration: 5000 });
 
   // Step 2: QA Manager reviews
   io.emit('agent:working', { role: 'qa_manager', agentName: qaManagerName, action: 'reviewing' });
@@ -966,8 +966,8 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
   if (!review.aprovado) {
     // Step 3a: Manager rejected — QA revises
     emitLog(`${qaManagerName}: Análise rejeitada — "${review.feedback.slice(0, 80)}"`);
-    await emitPersonalityBubble(qaManagerName, 'qa_manager', `Você rejeitou a análise do QA e pediu revisão: ${review.feedback.slice(0, 60)}`, 'alert', 5000);
-    await emitPersonalityBubble(qaAgentName, 'qa', 'O gerente rejeitou sua análise e pediu para você revisar', 'processing', 4000);
+    io.emit('agent:bubble', { agentName: qaManagerName, role: 'qa_manager', text: 'Análise rejeitada — revisando', type: 'alert', duration: 5000 });
+    io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Revisando análise...', type: 'processing', duration: 5000 });
 
     // QA revises incorporating manager feedback
     const revisedPrompt = buildPersonalizedPrompt('qa', qaAgentName) +
@@ -975,13 +975,13 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     qaReport = await analyzeQA(qaAgentName, revisedPrompt, JSON.stringify(bugData), bugId);
 
     emitLog(`${qaAgentName}: Análise revisada e enviada novamente`);
-    await emitPersonalityBubble(qaAgentName, 'qa', 'Você revisou a análise e está reenviando para o gerente', 'handoff', 3000);
-    await emitPersonalityBubble(qaManagerName, 'qa_manager', 'Você aprovou a análise revisada do QA', 'done', 3000);
+    io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Reenviando para gerente', type: 'handoff', duration: 4000 });
+    io.emit('agent:bubble', { agentName: qaManagerName, role: 'qa_manager', text: 'Análise aprovada ✓', type: 'done', duration: 4000 });
     emitLog(`${qaManagerName}: Revisão aceita ✓`);
   } else {
     // Step 3b: Manager approved on first try
     emitLog(`${qaManagerName}: Análise aprovada ✓`);
-    await emitPersonalityBubble(qaManagerName, 'qa_manager', 'Você aprovou a análise de QA de primeira', 'done', 3000);
+    io.emit('agent:bubble', { agentName: qaManagerName, role: 'qa_manager', text: 'Análise aprovada ✓', type: 'done', duration: 4000 });
   }
 
   // Merge manager observations into the report
@@ -1030,9 +1030,9 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
   io.emit('agent:walk_to', {
     role: 'qa', agentName: qaAgentName,
     toSectorId: 'DEV_ROOM',
-    message: `Encaminhando ${bugId} para DEV`,
+    message: `${bugId} → DEV`,
   });
-  await emitPersonalityBubble(qaAgentName, 'qa', 'Você finalizou o relatório e vai encaminhar para o time de desenvolvimento', 'handoff', 3000);
+  io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: `${bugId} → Enviando para DEV`, type: 'handoff', duration: 5000 });
 
   const channelInfo = activeChannels.get(channelId);
   if (channelInfo) channelInfo.status = 'dev';
@@ -1055,7 +1055,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
   let devCase = await generateDevCase(devAgentName, await buildPersonalizedPromptFull('dev', devAgentName), qaReport, caseId);
 
   emitLog(`${devAgentName}: Caso pronto — enviando para ${devLeadName} revisar...`);
-  await emitPersonalityBubble(devAgentName, 'dev', 'Você terminou de criar o caso de desenvolvimento e vai enviar para o tech lead revisar', 'handoff', 3000);
+  io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: 'Enviando caso para Tech Lead', type: 'handoff', duration: 5000 });
 
   // Step 2: Dev Lead reviews
   io.emit('agent:working', { role: 'dev_lead', agentName: devLeadName, action: 'reviewing' });
@@ -1069,8 +1069,8 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
   if (!leadReview.aprovado) {
     // Step 3a: Lead rejected — Dev revises
     emitLog(`${devLeadName}: Caso rejeitado — "${leadReview.feedback.slice(0, 80)}"`);
-    await emitPersonalityBubble(devLeadName, 'dev_lead', `Você rejeitou o caso do dev e pediu ajustes: ${leadReview.feedback.slice(0, 60)}`, 'alert', 5000);
-    await emitPersonalityBubble(devAgentName, 'dev', 'O tech lead rejeitou seu caso e pediu para você revisar', 'processing', 4000);
+    io.emit('agent:bubble', { agentName: devLeadName, role: 'dev_lead', text: 'Caso rejeitado — ajustes', type: 'alert', duration: 5000 });
+    io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: 'Revisando caso...', type: 'processing', duration: 5000 });
 
     // Dev revises incorporating lead feedback
     const revisedDevPrompt = buildPersonalizedPrompt('dev', devAgentName) +
@@ -1078,13 +1078,13 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     devCase = await generateDevCase(devAgentName, revisedDevPrompt, qaReport, caseId);
 
     emitLog(`${devAgentName}: Caso revisado e enviado novamente`);
-    await emitPersonalityBubble(devAgentName, 'dev', 'Você revisou o caso e está reenviando para o tech lead aprovar', 'handoff', 3000);
-    await emitPersonalityBubble(devLeadName, 'dev_lead', 'Você aprovou o caso revisado do dev', 'done', 3000);
+    io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: 'Reenviando para Tech Lead', type: 'handoff', duration: 4000 });
+    io.emit('agent:bubble', { agentName: devLeadName, role: 'dev_lead', text: 'Caso aprovado ✓', type: 'done', duration: 4000 });
     emitLog(`${devLeadName}: Revisão aceita ✓`);
   } else {
     // Step 3b: Lead approved on first try
     emitLog(`${devLeadName}: Caso aprovado ✓`);
-    await emitPersonalityBubble(devLeadName, 'dev_lead', 'Você aprovou o caso do dev de primeira sem precisar de revisão', 'done', 3000);
+    io.emit('agent:bubble', { agentName: devLeadName, role: 'dev_lead', text: 'Caso aprovado ✓', type: 'done', duration: 4000 });
   }
 
   // Merge lead observations into the case
@@ -1132,7 +1132,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
   io.emit('case:opened', { ...devCase, created_by: devAgentName, source_sector: 'DEV' });
   emitLog(`DEV pipeline concluído — caso ${caseId}: ${devCase.titulo}`);
 
-  await emitPersonalityBubble(devAgentName, 'dev', `Você acabou de criar e ter aprovado o caso ${caseId} pelo tech lead`, 'done', 4000);
+  io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: `Caso ${caseId} criado ✓`, type: 'done', duration: 5000 });
 
   // Skill evolution: generate learning for DEV and Dev Lead (fire-and-forget)
   void (async () => {
