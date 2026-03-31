@@ -161,6 +161,27 @@ export async function dbGetRecentLogs(limit = 100) {
   return data || [];
 }
 
+// Agent-to-agent conversations (inter-agent communication log)
+export async function dbLogAgentConversation(fromAgent: string, fromRole: string, toAgent: string, toRole: string, message: string, context?: string) {
+  const { error } = await supabase.from('agent_messages').insert({
+    message: `${fromAgent} → ${toAgent}: ${message}`,
+    type: 'conversation',
+    payload: { fromAgent, fromRole, toAgent, toRole, message, context, timestamp: new Date().toISOString() },
+  });
+  if (error) console.error('dbLogAgentConversation error:', error);
+}
+
+export async function dbGetRecentAgentConversations(limit = 50): Promise<Array<{ message: string; created_at: string; payload: any }>> {
+  const { data, error } = await supabase
+    .from('agent_messages')
+    .select('message, created_at, payload')
+    .eq('type', 'conversation')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetRecentAgentConversations error:', error);
+  return data || [];
+}
+
 // Agent activity log — records what each agent DID (for memory/recall)
 export async function dbLogAgentActivity(agentName: string, role: string, action: string, details: string) {
   const { error } = await supabase.from('agent_messages').insert({

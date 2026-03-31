@@ -87,8 +87,12 @@ interface OfficeStoreState {
   chatLoading: boolean;
   queueSize: number;
   activeConversations: Map<string, ActiveConversation>;
+  // Agent conversations (inter-agent communication)
+  agentConversations: Array<{ from: string; fromRole: string; to: string; toRole: string; message: string; time: string }>;
+  addAgentConversation: (conv: { from: string; fromRole: string; to: string; toRole: string; message: string }) => void;
+
   // Agent work status (what each agent is doing right now)
-  agentWorkStatuses: Map<string, string>; // agentName → description
+  agentWorkStatuses: Map<string, string>;
   setAgentWorkStatus: (agentName: string, status: string) => void;
   clearAgentWorkStatus: (agentName: string) => void;
 
@@ -161,6 +165,13 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   chatLoading: false,
   queueSize: 0,
   activeConversations: new Map(),
+  agentConversations: [],
+  addAgentConversation: (conv) => {
+    const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    set(state => ({
+      agentConversations: [...state.agentConversations.slice(-100), { ...conv, time }],
+    }));
+  },
   agentWorkStatuses: new Map(),
   setAgentWorkStatus: (agentName, status) => {
     const m = new Map(get().agentWorkStatuses);

@@ -313,8 +313,8 @@ function renderAgentNames(
   ctx.textAlign = 'center';
 
   const ROLE_SHORT: Record<string, string> = {
-    ceo: 'CEO', suporte: 'Suporte', qa: 'QA', qa_manager: 'Ger.QA',
-    dev: 'DEV', dev_lead: 'TechLead', log_analyzer: 'Logs',
+    ceo: 'CEO', suporte: 'Suporte', qa: 'QA Sênior', qa_manager: 'Ger. QA',
+    dev: 'DEV Sênior', dev_lead: 'Tech Lead', log_analyzer: 'Log Analyzer',
   };
 
   for (const ch of characters) {

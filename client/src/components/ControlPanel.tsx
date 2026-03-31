@@ -4,8 +4,8 @@ import { AgentChat } from './AgentChat';
 import { MeetingChat } from './MeetingChat';
 import type { AgentRole } from '../types/agents';
 
-const TABS = ['Equipe', 'Fila', 'Casos', 'Logs'] as const;
-const TAB_ICONS: Record<string, string> = { Equipe: '\u{1F465}', Fila: '\u{1F4CB}', Casos: '\u{1F41B}', Logs: '\u{1F4C4}' };
+const TABS = ['Equipe', 'Fila', 'Casos', 'Chat', 'Logs'] as const;
+const TAB_ICONS: Record<string, string> = { Equipe: '\u{1F465}', Fila: '\u{1F4CB}', Casos: '\u{1F41B}', Chat: '\u{1F4AC}', Logs: '\u{1F4C4}' };
 
 const ROLE_LABELS: Record<AgentRole, string> = {
   ceo: 'CEO', suporte: 'Suporte', qa: 'QA', qa_manager: 'Gerente QA',
@@ -22,7 +22,7 @@ export function ControlPanel() {
   const {
     agents, selectedAgentId, selectAgent, openChat,
     logEntries, tickets, cases, chatAgentId, resolveCase, deleteCase,
-    queueSize, meetingActive, openCaseDetail, renameAgent,
+    queueSize, meetingActive, openCaseDetail, renameAgent, agentConversations,
   } = useOfficeStore();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -252,6 +252,31 @@ export function ControlPanel() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* === CHAT (Agent Conversations) === */}
+        {activeTab === 'Chat' && (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Conversas entre Agentes</div>
+            {agentConversations.length === 0 && (
+              <div className="text-muted">Nenhuma conversa registrada ainda</div>
+            )}
+            {[...agentConversations].reverse().map((conv, i) => (
+              <div key={i} className="panel-card" style={{ cursor: 'default', borderLeft: '3px solid #f39c12' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <span style={{ fontSize: 11 }}>
+                    <span style={{ fontWeight: 700, color: '#4488ff' }}>{conv.from}</span>
+                    <span style={{ color: '#555' }}> ({conv.fromRole})</span>
+                    <span style={{ color: '#888' }}> → </span>
+                    <span style={{ fontWeight: 700, color: '#2ecc71' }}>{conv.to}</span>
+                    <span style={{ color: '#555' }}> ({conv.toRole})</span>
+                  </span>
+                  <span style={{ fontSize: 9, color: '#555' }}>{conv.time}</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#aaa' }}>{conv.message}</div>
+              </div>
+            ))}
           </div>
         )}
 

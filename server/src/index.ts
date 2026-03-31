@@ -14,6 +14,7 @@ import {
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   dbGetAgentTickets, dbGetAgentCases, dbGetRecentTicketsWithAgent, dbGetRecentAnomalies,
   dbLogAgentActivity, dbGetAgentActivityLog,
+  dbLogAgentConversation, dbGetRecentAgentConversations,
   dbDeleteCase, dbGetCaseConversation,
   dbGetUnanalyzedErrorLogs, dbMarkErrorLogsAsAnalyzed, dbGetErrorLogStats,
   type ErrorLog,
@@ -689,6 +690,12 @@ app.get('/api/code/structure', (_, res) => {
   res.json({ structure: getProjectStructure() });
 });
 
+// Get recent agent-to-agent conversations
+app.get('/api/agent-conversations', async (_, res) => {
+  const conversations = await dbGetRecentAgentConversations(50);
+  res.json({ conversations });
+});
+
 app.get('/api/logs', async (_, res) => {
   const logs = await dbGetRecentLogs(50);
   res.json(logs);
@@ -1008,6 +1015,8 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
 
   emitLog(`${qaAgentName}: Análise pronta — enviando para ${qaManagerName} revisar...`);
   io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Enviando análise para o gerente', type: 'handoff', duration: 5000 });
+  dbLogAgentConversation(qaAgentName, 'qa', qaManagerName, 'qa_manager', `Análise do ${bugId} pronta para revisão`, bugId).catch(() => {});
+  io.emit('agent:conversation', { from: qaAgentName, fromRole: 'qa', to: qaManagerName, toRole: 'qa_manager', message: `Análise do ${bugId} pronta para revisão` });
 
   // Step 2: QA Manager reviews
   io.emit('agent:working', { role: 'qa_manager', agentName: qaManagerName, action: `Revisando ${bugId}` });
@@ -1079,6 +1088,11 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     if (qaInsight) await dbAddLearning({ agent_name: qaAgentName, role: 'qa', learning: qaInsight, task_context: bugId, tasks_completed_at: qaCount });
     if (managerInsight) await dbAddLearning({ agent_name: qaManagerName, role: 'qa_manager', learning: managerInsight, task_context: bugId, tasks_completed_at: managerCount });
     emitLog(`📈 ${qaAgentName} e ${qaManagerName} evoluíram suas skills (${qaCount} e ${managerCount} tarefas)`);
+    // Emit level-up events + bubble animation
+    io.emit('agent:levelup', { agentName: qaAgentName, role: 'qa', tasksCompleted: qaCount });
+    io.emit('agent:levelup', { agentName: qaManagerName, role: 'qa_manager', tasksCompleted: managerCount });
+    io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: `⬆️ Level Up! (${qaCount})`, type: 'done', duration: 6000 });
+    io.emit('agent:bubble', { agentName: qaManagerName, role: 'qa_manager', text: `⬆️ Level Up! (${managerCount})`, type: 'done', duration: 6000 });
   })();
 
   // Walk to DEV_ROOM
@@ -1088,6 +1102,8 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     message: `${bugId} → DEV`,
   });
   io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: `${bugId} → Enviando para DEV`, type: 'handoff', duration: 5000 });
+  dbLogAgentConversation(qaAgentName, 'qa', devAgentName, 'dev', `Relatório QA do ${bugId} aprovado. Encaminhando para abrir caso.`, bugId).catch(() => {});
+  io.emit('agent:conversation', { from: qaAgentName, fromRole: 'qa', to: devAgentName, toRole: 'dev', message: `${bugId} aprovado pelo QA. Abrindo caso.` });
 
   const channelInfo = activeChannels.get(channelId);
   if (channelInfo) channelInfo.status = 'dev';
@@ -1115,6 +1131,8 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
 
   emitLog(`${devAgentName}: Caso pronto — enviando para ${devLeadName} revisar...`);
   io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: 'Enviando caso para Tech Lead', type: 'handoff', duration: 5000 });
+  dbLogAgentConversation(devAgentName, 'dev', devLeadName, 'dev_lead', `Caso ${caseId} pronto para revisão`, caseId).catch(() => {});
+  io.emit('agent:conversation', { from: devAgentName, fromRole: 'dev', to: devLeadName, toRole: 'dev_lead', message: `Caso ${caseId} pronto para revisão` });
 
   // Step 2: Dev Lead reviews
   io.emit('agent:working', { role: 'dev_lead', agentName: devLeadName, action: `Revisando ${caseId}` });
@@ -1209,6 +1227,10 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     if (devInsight) await dbAddLearning({ agent_name: devAgentName, role: 'dev', learning: devInsight, task_context: caseId, tasks_completed_at: devCount });
     if (leadInsight) await dbAddLearning({ agent_name: devLeadName, role: 'dev_lead', learning: leadInsight, task_context: caseId, tasks_completed_at: leadCount });
     emitLog(`📈 ${devAgentName} e ${devLeadName} evoluíram suas skills (${devCount} e ${leadCount} tarefas)`);
+    io.emit('agent:levelup', { agentName: devAgentName, role: 'dev', tasksCompleted: devCount });
+    io.emit('agent:levelup', { agentName: devLeadName, role: 'dev_lead', tasksCompleted: leadCount });
+    io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: `⬆️ Level Up! (${devCount})`, type: 'done', duration: 6000 });
+    io.emit('agent:bubble', { agentName: devLeadName, role: 'dev_lead', text: `⬆️ Level Up! (${leadCount})`, type: 'done', duration: 6000 });
   })();
 
   freeAgent(supportAgentId);

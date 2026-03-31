@@ -122,6 +122,17 @@ export function useWebSocket() {
       useOfficeStore.getState().removeCase(data.casoId);
     });
 
+    // Agent-to-agent conversations
+    socket.on('agent:conversation', (data: { from: string; fromRole: string; to: string; toRole: string; message: string }) => {
+      useOfficeStore.getState().addAgentConversation(data);
+    });
+
+    // Agent level-up (trigger bubble via server emit)
+    socket.on('agent:levelup', (data: { agentName: string; role: string; tasksCompleted: number }) => {
+      useOfficeStore.getState().addLogEntry(`🎉 ${data.agentName} subiu de nível! (${data.tasksCompleted} tarefas)`);
+      // The level-up bubble is sent from the server as agent:bubble with type 'done'
+    });
+
     // Error log stats from server (for KPIs)
     socket.on('errorlogs:stats', (data: { total: number; naoAnalisados: number; analisados: number; resolvidos: number }) => {
       const os = useOfficeStore.getState().officeState;
