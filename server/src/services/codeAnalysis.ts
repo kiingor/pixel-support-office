@@ -11,19 +11,46 @@ const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.json', '.css', 
 /** Ensure the repo is cloned and up to date. */
 export async function syncRepo(): Promise<boolean> {
   try {
-    if (fs.existsSync(CODE_DIR)) {
-      // Pull latest
-      execSync('git pull --ff-only', { cwd: CODE_DIR, stdio: 'pipe', timeout: 30000 });
-      console.log('[CodeAnalysis] Repo updated via git pull');
+    const gitDir = path.join(CODE_DIR, '.git');
+    let needsClone = false;
+
+    if (fs.existsSync(gitDir)) {
+      // Verify it's the correct repo (not a wrong clone)
+      try {
+        const remote = execSync('git remote get-url origin', { cwd: CODE_DIR, stdio: 'pipe', timeout: 5000 }).toString().trim();
+        if (remote.includes('SoftcomHub')) {
+          // Correct repo — pull latest
+          execSync('git pull --ff-only', { cwd: CODE_DIR, stdio: 'pipe', timeout: 30000 });
+          console.log('[CodeAnalysis] Repo updated via git pull');
+        } else {
+          // Wrong repo — needs re-clone
+          console.warn(`[CodeAnalysis] Wrong repo detected (${remote}), re-cloning SoftcomHub...`);
+          needsClone = true;
+        }
+      } catch {
+        needsClone = true;
+      }
     } else {
-      // Clone
-      execSync(`git clone ${REPO_URL} "${CODE_DIR}"`, { stdio: 'pipe', timeout: 60000 });
-      console.log('[CodeAnalysis] Repo cloned');
+      needsClone = true;
     }
+
+    if (needsClone) {
+      // Remove old directory and clone fresh
+      if (fs.existsSync(CODE_DIR)) {
+        fs.rmSync(CODE_DIR, { recursive: true, force: true });
+      }
+      execSync(`git clone ${REPO_URL} "${CODE_DIR}"`, { stdio: 'pipe', timeout: 120000 });
+      console.log('[CodeAnalysis] SoftcomHub repo cloned successfully');
+    }
+
+    // Count indexed files
+    const files = listCodeFiles();
+    console.log(`[CodeAnalysis] Indexed ${files.length} code files`);
+
     return true;
   } catch (error) {
-    console.warn('[CodeAnalysis] Git sync failed, using existing copy:', (error as Error).message);
-    return fs.existsSync(CODE_DIR);
+    console.warn('[CodeAnalysis] Git sync failed:', (error as Error).message);
+    return false;
   }
 }
 
@@ -162,8 +189,8 @@ export function buildCodeContextForBug(bugDescription: string, maxTokens = 8000)
     const content = readCodeFile(file);
     if (!content) continue;
 
-    // Truncate very large files
-    const truncated = content.length > 2000 ? content.slice(0, 2000) + '\n... [arquivo truncado]' : content;
+    // Truncate very large files (4000 chars = ~1000 tokens per file)
+    const truncated = content.length > 4000 ? content.slice(0, 4000) + '\n... [arquivo truncado — total: ' + content.length + ' chars]' : content;
     const section = `\n📄 ${file}:\n\`\`\`\n${truncated}\n\`\`\`\n`;
     context += section;
     totalChars += section.length;
