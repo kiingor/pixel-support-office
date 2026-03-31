@@ -13,6 +13,7 @@ import {
   dbCreateAgent, dbFireAgent, dbGetActiveAgents,
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   dbGetAgentTickets, dbGetAgentCases, dbGetRecentTicketsWithAgent, dbGetRecentAnomalies,
+  dbLogAgentActivity, dbGetAgentActivityLog,
   dbDeleteCase, dbGetCaseConversation,
   dbGetUnanalyzedErrorLogs, dbMarkErrorLogsAsAnalyzed, dbGetErrorLogStats,
   type ErrorLog,
@@ -320,6 +321,17 @@ async function buildAgentActivityContext(agentName: string, role: string): Promi
           const date = new Date(c.created_at).toLocaleDateString('pt-BR');
           context += `  - ${c.caso_id}: "${c.titulo}" | ${c.status} | ${date}\n`;
         }
+      }
+    }
+
+    // Add detailed activity log from agent_messages (saved by dbLogAgentActivity)
+    const activityLog = await dbGetAgentActivityLog(agentName, 20);
+    if (activityLog.length > 0) {
+      context += `\n📝 MEU REGISTRO DE ATIVIDADES (o que EU fiz, em ordem cronológica):\n`;
+      for (const a of activityLog.reverse()) {
+        const date = new Date(a.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        const payload = a.payload as { action?: string; details?: string } | null;
+        context += `  - [${date}] ${payload?.action || 'Atividade'}: ${payload?.details || a.message.slice(0, 100)}\n`;
       }
     }
 
@@ -790,6 +802,7 @@ async function handleSupportMessage(channelId: string, author: string, message: 
 
   emitLog(`${agentName} analisando mensagem de ${author}...`);
   io.emit('agent:working', { role: 'suporte', agentName, agentId: resolvedAgentId, action: `Atendendo: ${author}` });
+  dbLogAgentActivity(agentName, 'suporte', 'Atendimento', `Recebeu mensagem de ${author}: "${message.slice(0, 80)}"`).catch(() => {});
 
   // Emit bubble showing the agent is processing a Discord message
   io.emit('agent:bubble', {
@@ -841,6 +854,7 @@ async function handleSupportMessage(channelId: string, author: string, message: 
       const bugId = `BUG-${++bugCounter}`;
       io.emit('ticket:escalated', { ticketId, bugId, classification: bugData });
       emitLog(`${agentName}: Bug detectado e escalado para QA`);
+      dbLogAgentActivity(agentName, 'suporte', 'Escalou bug', `Detectou bug ${bugId} e escalou para QA. Título: ${bugData.titulo || 'N/A'}`).catch(() => {});
 
       // Emit visual walk event: agent walks from support to QA sector
       io.emit('agent:walk_to', {
@@ -882,6 +896,7 @@ async function handleSupportMessage(channelId: string, author: string, message: 
       activeChannels.delete(channelId);
       io.emit('ticket:completed', { ticketId, classification: 'duvida' });
       emitLog(`${agentName}: Respondeu dúvida de ${author}`);
+      dbLogAgentActivity(agentName, 'suporte', 'Respondeu dúvida', `Respondeu dúvida de ${author}`).catch(() => {});
 
       // Free the agent
       freeAgent(resolvedAgentId);
@@ -932,6 +947,7 @@ async function sendSupportResponse(channelId: string, ticketId: string, response
 async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string, supportAgentId: string) {
   emitLog(`${qaAgentName} analisando ${bugId}...`);
   io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: `Analisando ${bugId}` });
+  dbLogAgentActivity(qaAgentName, 'qa', 'Análise QA', `Analisando ${bugId}: ${(bugData.titulo || bugData.descricao || '').slice(0, 100)}`).catch(() => {});
   io.emit('agent:bubble', {
     role: 'qa', agentName: qaAgentName,
     text: `Analisando ${bugId}...`, type: 'processing', duration: 5000,
@@ -1046,6 +1062,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
   const caseId = `CASE-${++caseCounter}`;
   emitLog(`${devAgentName} gerando caso ${caseId}...`);
   io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: `Criando ${caseId} (${bugId})` });
+  dbLogAgentActivity(devAgentName, 'dev', 'Criando caso', `Gerando ${caseId} para ${bugId}`).catch(() => {});
   io.emit('agent:bubble', {
     role: 'dev', agentName: devAgentName,
     text: `Gerando caso ${caseId}...`, type: 'processing', duration: 5000,
@@ -1131,6 +1148,8 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
 
   io.emit('case:opened', { ...devCase, created_by: devAgentName, source_sector: 'DEV' });
   emitLog(`DEV pipeline concluído — caso ${caseId}: ${devCase.titulo}`);
+  dbLogAgentActivity(devAgentName, 'dev', 'Caso criado', `${caseId} aprovado: "${devCase.titulo}"`).catch(() => {});
+  dbLogAgentActivity(devLeadName, 'dev_lead', 'Caso aprovado', `Aprovou ${caseId}: "${devCase.titulo}"`).catch(() => {});
 
   io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: `Caso ${caseId} criado ✓`, type: 'done', duration: 5000 });
 
@@ -1616,15 +1635,25 @@ Outros presentes: ${participants.join(', ')}.`;
     const { agentId, name, role } = data;
     if (role === 'suporte') supportAgentName = name;
     else if (role === 'qa') qaAgentName = name;
+    else if (role === 'qa_manager') qaManagerName = name;
     else if (role === 'dev') devAgentName = name;
-    else if (role === 'log_analyzer') logAgentName = name;
+    else if (role === 'dev_lead') devLeadName = name;
+    else if (role === 'log_analyzer') {
+      logAgentName = name;
+      // Update in logAnalyzerAgents array
+      const idx = logAnalyzerAgents.findIndex(n => n === data.oldName);
+      if (idx >= 0) logAnalyzerAgents[idx] = name;
+    }
     else if (role === 'ceo') ceoAgentName = name;
 
-    // Also update in supportAgents array if it's a support agent
+    // Update in supportAgents array
     const supportAgent = supportAgents.find(a => a.id === agentId);
     if (supportAgent) supportAgent.name = name;
 
+    // Persist to DB
+    await dbUpdateAgent(agentId, { name });
     io.emit('agent:renamed', { agentId, name });
+    emitLog(`Agente renomeado: ${name}`);
   });
 
   socket.on('disconnect', () => {
@@ -1988,6 +2017,7 @@ async function analyzeErrorLogGroup(agentName: string, group: ErrorLogGroup): Pr
 
     // 1. VISUAL: Show agent is working (long bubble so it's visible during analysis)
     emitLog(`${agentName} analisando: ${shortLog}... (${group.ocorrencias}x, ${group.usuarios.length} usr)`);
+    dbLogAgentActivity(agentName, 'log_analyzer', 'Analisando log', `${group.tela}/${group.rota}: "${shortLog}" (${group.ocorrencias}x, ${group.usuarios.length} usr)`).catch(() => {});
     io.emit('agent:bubble', {
       agentName, role: 'log_analyzer',
       text: `Analisando: ${group.tela}/${group.rota} (${group.ocorrencias}x)`,

@@ -161,6 +161,31 @@ export async function dbGetRecentLogs(limit = 100) {
   return data || [];
 }
 
+// Agent activity log — records what each agent DID (for memory/recall)
+export async function dbLogAgentActivity(agentName: string, role: string, action: string, details: string) {
+  const { error } = await supabase.from('agent_messages').insert({
+    from_agent_id: null,
+    to_agent_id: null,
+    message: `[${role}] ${agentName}: ${action} — ${details}`,
+    type: 'activity',
+    payload: { agentName, role, action, details, timestamp: new Date().toISOString() },
+  });
+  if (error) console.error('dbLogAgentActivity error:', error);
+}
+
+/** Get recent activity for a specific agent */
+export async function dbGetAgentActivityLog(agentName: string, limit = 20): Promise<Array<{ message: string; created_at: string; payload: any }>> {
+  const { data, error } = await supabase
+    .from('agent_messages')
+    .select('message, created_at, payload')
+    .eq('type', 'activity')
+    .ilike('message', `%${agentName}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetAgentActivityLog error:', error);
+  return data || [];
+}
+
 // Agent messages
 export async function dbLogAgentMessage(msg: {
   from_agent_id?: string;
