@@ -8,21 +8,27 @@ dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
 dotenv.config({ path: '../../.env' });
 
-// Claude — skill execution (deep technical tasks)
+// Claude — only for complex code generation (generateDevCase)
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
-  maxRetries: 3, // auto-retry on 529 overloaded with exponential backoff
+  maxRetries: 3,
 });
-const MODEL = 'claude-sonnet-4-6';
-const CHEAP_MODEL = 'claude-haiku-4-5-20251001'; // For low-cost fallbacks (bubbles, logs)
+const SONNET = 'claude-sonnet-4-6';        // Only for generateDevCase (needs quality for prompt_ia)
+const HAIKU = 'claude-haiku-4-5-20251001'; // For QA analysis, reviews, log classification
+// Legacy aliases
+const MODEL = SONNET;
+const CHEAP_MODEL = HAIKU;
 
-
-// Google Gemini — thinking layer (chat, bubbles, meetings, personality)
-const openrouter = new OpenAI({
+// Google Gemini — primary model for most tasks (cheap + fast)
+const gemini = new OpenAI({
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
   apiKey: process.env.GOOGLE_API_KEY,
 });
-const THINKING_MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash-lite';
+const GEMINI_FLASH = 'gemini-2.0-flash';       // For support chat, ticket classification
+const GEMINI_LITE = process.env.GOOGLE_MODEL || 'gemini-2.0-flash-lite'; // For bubbles, agent chat
+// Legacy alias
+const openrouter = gemini;
+const THINKING_MODEL = GEMINI_LITE;
 
 export interface ClassificationResult {
   classificacao: 'duvida' | 'bug';
@@ -73,21 +79,22 @@ export interface DevReviewResult {
   observacoes: string;
 }
 
-// Support agent: classify ticket and respond
+// Support agent: classify ticket and respond — uses Gemini Flash (cheap)
 export async function classifyTicket(
   agentName: string,
   systemPrompt: string,
   userMessage: string,
 ): Promise<ClassificationResult> {
   try {
-    const response = await client.messages.create({
-      model: MODEL,
+    const response = await gemini.chat.completions.create({
+      model: GEMINI_FLASH,
       max_tokens: 1024,
-      system: systemPrompt.replace('{AGENT_NAME}', agentName),
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [
+        { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
+        { role: 'user', content: userMessage },
+      ],
     });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = response.choices[0]?.message?.content || '';
 
     // Try to parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -138,7 +145,7 @@ e sugira correções baseadas no código real.
 ${codeContext}`;
 
     const response = await client.messages.create({
-      model: MODEL,
+      model: HAIKU, // QA analysis uses Haiku (cheaper, structured JSON output)
       max_tokens: 4096,
       system: enhancedPrompt,
       messages: [{ role: 'user', content: `Bug Report:\n${bugReport}\n\nBug ID: ${bugId}` }],
@@ -198,12 +205,15 @@ export async function generateDevCase(
 
     const enhancedPrompt = systemPrompt.replace('{AGENT_NAME}', agentName) + `
 
-IMPORTANTE: Você tem acesso ao código fonte REAL do projeto SoftcomHub (Next.js/TypeScript).
-Use o código abaixo para gerar um caso PRECISO com arquivos reais, linhas reais, e um prompt_ia
-que contenha o código atual e as mudanças exatas necessárias.
+IMPORTANTE: Você tem acesso ao código fonte REAL do projeto SoftcomHub.
+Use o código abaixo para gerar um caso PRECISO com arquivos reais e linhas reais.
 
-O campo "prompt_ia" deve ser um prompt COMPLETO que alguém pode copiar e colar no Claude
-para implementar a correção, incluindo trechos do código atual e o que deve ser alterado.
+O campo "prompt_ia" deve:
+- NÃO incluir contexto genérico do sistema (nada de "Você está trabalhando no SoftcomHub, uma plataforma...")
+- APENAS detalhar o erro: o que acontece, onde acontece (arquivo + linha), o que causa
+- Incluir trechos do código REAL onde o bug ocorre
+- NÃO propor solução — apenas descrever o problema com precisão
+- Terminar com: "Se tiver dúvidas ou não confiar nesse prompt, me pergunte antes de executar."
 
 ${codeContext}`;
 
@@ -252,7 +262,7 @@ ${codeContext}`;
   }
 }
 
-// QA Manager: review QA analysis before escalating to DEV
+// QA Manager: review QA analysis before escalating to DEV — uses Haiku (cheap review)
 export async function reviewQA(
   managerName: string,
   systemPrompt: string,
@@ -261,7 +271,7 @@ export async function reviewQA(
 ): Promise<QAReviewResult> {
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: HAIKU,
       max_tokens: 2048,
       system: systemPrompt.replace('{AGENT_NAME}', managerName),
       messages: [{
@@ -285,7 +295,7 @@ export async function reviewQA(
   }
 }
 
-// Dev Lead: review dev case before saving to DB
+// Dev Lead: review dev case before saving to DB — uses Haiku (cheap review)
 export async function reviewDevCase(
   leadName: string,
   systemPrompt: string,
@@ -294,7 +304,7 @@ export async function reviewDevCase(
 ): Promise<DevReviewResult> {
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: HAIKU,
       max_tokens: 2048,
       system: systemPrompt.replace('{AGENT_NAME}', leadName),
       messages: [{
@@ -459,11 +469,9 @@ async function describeMediaWithGemini(url: string, type: 'video' | 'audio', nam
 }
 
 /**
- * Support agent chat — always uses Claude (main model).
- * Injects real SoftcomHub code context and supports multimodal attachments:
- *   - Images → Claude vision (direct)
- *   - Videos/Audio → Gemini transcription → text context for Claude
- *   - Documents → listed as text references
+ * Support agent chat — uses Gemini Flash (cheap + fast).
+ * Injects real SoftcomHub code context and supports multimodal attachments.
+ * Falls back to Claude Haiku if Gemini fails.
  */
 export async function supportChat(
   agentName: string,
@@ -480,55 +488,68 @@ export async function supportChat(
 Use os trechos abaixo para responder com precisão — entenda o sistema pelo código real, não só pela documentação.
 ${codeContext}`;
 
-  // Build user message content — text + optional images (Claude vision)
-  type ContentBlock =
-    | { type: 'text'; text: string }
-    | { type: 'image'; source: { type: 'url'; url: string } };
-
-  const userContent: ContentBlock[] = [{ type: 'text', text: userMessage }];
-
-  // Separate attachments by type
+  // Build enriched user message with media transcriptions
+  let enrichedMessage = userMessage;
   const imageAttachments = attachments.filter(a => a.type === 'image');
   const videoAttachments = attachments.filter(a => a.type === 'video');
   const audioAttachments = attachments.filter(a => a.type === 'audio');
   const docAttachments = attachments.filter(a => a.type === 'document');
 
-  // Images → Claude vision (direct URL)
-  for (const img of imageAttachments) {
-    userContent.push({ type: 'image', source: { type: 'url', url: img.url } });
-  }
-
-  // Videos → Gemini transcription/description → text context
   for (const vid of videoAttachments) {
-    const description = await describeMediaWithGemini(vid.url, 'video', vid.name);
-    userContent.push({ type: 'text', text: `\n📹 VÍDEO ENVIADO PELO CLIENTE (${vid.name}):\n${description}` });
+    const desc = await describeMediaWithGemini(vid.url, 'video', vid.name);
+    enrichedMessage += `\n\n📹 VÍDEO (${vid.name}):\n${desc}`;
   }
-
-  // Audio → Gemini transcription → text context
   for (const aud of audioAttachments) {
-    const transcription = await describeMediaWithGemini(aud.url, 'audio', aud.name);
-    userContent.push({ type: 'text', text: `\n🎤 ÁUDIO ENVIADO PELO CLIENTE (${aud.name}):\n${transcription}` });
+    const desc = await describeMediaWithGemini(aud.url, 'audio', aud.name);
+    enrichedMessage += `\n\n🎤 ÁUDIO (${aud.name}):\n${desc}`;
   }
-
-  // Documents → text reference with URL
   if (docAttachments.length > 0) {
-    const fileList = docAttachments.map(a => `📎 ${a.name}: ${a.url}`).join('\n');
-    userContent.push({ type: 'text', text: `\nDocumentos enviados:\n${fileList}` });
+    enrichedMessage += `\n\nDocumentos: ${docAttachments.map(a => `${a.name}: ${a.url}`).join(', ')}`;
   }
 
+  // Build messages array for Gemini (OpenAI-compatible format)
+  const messages: Array<{ role: string; content: any }> = [
+    { role: 'system', content: enhancedSystem },
+    ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
+  ];
+
+  // If images, use multimodal content
+  if (imageAttachments.length > 0) {
+    const content: any[] = [{ type: 'text', text: enrichedMessage }];
+    for (const img of imageAttachments) {
+      content.push({ type: 'image_url', image_url: { url: img.url } });
+    }
+    messages.push({ role: 'user', content });
+  } else {
+    messages.push({ role: 'user', content: enrichedMessage });
+  }
+
+  // Try Gemini Flash first (cheap)
+  try {
+    const response = await gemini.chat.completions.create({
+      model: GEMINI_FLASH,
+      max_tokens: 1024,
+      messages: messages as any,
+    });
+    return response.choices[0]?.message?.content || 'Sem resposta.';
+  } catch (error: any) {
+    console.warn(`[AI] supportChat Gemini failed, falling back to Haiku:`, error?.message);
+  }
+
+  // Fallback to Claude Haiku
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: HAIKU,
       max_tokens: 1024,
       system: enhancedSystem,
       messages: [
         ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: userContent.length === 1 ? userMessage : userContent },
+        { role: 'user', content: enrichedMessage },
       ],
     });
     return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
   } catch (error) {
-    console.error('AI supportChat error:', error);
+    console.error('AI supportChat fallback error:', error);
     return 'Desculpe, estou com dificuldades técnicas no momento.';
   }
 }
