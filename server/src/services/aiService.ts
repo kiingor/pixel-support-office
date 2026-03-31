@@ -205,15 +205,21 @@ export async function generateDevCase(
 
     const enhancedPrompt = systemPrompt.replace('{AGENT_NAME}', agentName) + `
 
-IMPORTANTE: Você tem acesso ao código fonte REAL do projeto SoftcomHub.
-Use o código abaixo para gerar um caso PRECISO com arquivos reais e linhas reais.
+REGRAS OBRIGATÓRIAS PARA O CASO:
 
-O campo "prompt_ia" deve:
-- NÃO incluir contexto genérico do sistema (nada de "Você está trabalhando no SoftcomHub, uma plataforma...")
-- APENAS detalhar o erro: o que acontece, onde acontece (arquivo + linha), o que causa
-- Incluir trechos do código REAL onde o bug ocorre
-- NÃO propor solução — apenas descrever o problema com precisão
-- Terminar com: "Se tiver dúvidas ou não confiar nesse prompt, me pergunte antes de executar."
+1. BASEIE-SE APENAS no código fonte REAL fornecido abaixo
+2. O campo "prompt_ia" deve conter APENAS:
+   - O QUE está errado (descrição do erro/comportamento)
+   - ONDE no código ocorre (arquivo real + trecho de código real)
+   - POR QUE está errado (causa raiz técnica)
+3. O "prompt_ia" NÃO PODE conter:
+   - Contexto genérico ("Você está trabalhando no SoftcomHub...")
+   - Soluções, correções ou código corrigido
+   - Seção "Como testar" ou "Como corrigir"
+   - Seção "O que precisa mudar"
+   - Código hipotético ou inventado
+4. Deixe "estrategia_fix", "efeitos_colaterais" e "testes_necessarios" VAZIOS
+5. Se o código relevante não está disponível, diga "código não disponível para inspeção"
 
 ${codeContext}`;
 

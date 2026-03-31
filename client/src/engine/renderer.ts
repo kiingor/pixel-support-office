@@ -76,24 +76,32 @@ export function renderFrame(
     drawables.push({
       zY: charZY,
       draw: (c) => {
-        // Pulsing aura when agent is working
+        // Strong pulsing aura when agent is working
         if (isWorking && zoom >= 2) {
-          const pulse = 0.3 + 0.15 * Math.sin(performance.now() / 600);
+          const pulse = 0.5 + 0.25 * Math.sin(performance.now() / 500);
           const auraColor = ROLE_COLORS[ch.role] || '#4488ff';
           const cx = drawX + cached.width / 2;
           const cy = drawY + cached.height / 2;
-          const rx = cached.width * 0.55;
-          const ry = cached.height * 0.45;
+          const rx = cached.width * 0.7;
+          const ry = cached.height * 0.55;
 
           c.save();
+          // Outer glow (large, soft)
+          c.globalAlpha = pulse * 0.4;
+          c.beginPath();
+          c.ellipse(cx, cy, rx * 1.6, ry * 1.6, 0, 0, Math.PI * 2);
+          c.fillStyle = auraColor;
+          c.fill();
+          // Middle ring
+          c.globalAlpha = pulse * 0.7;
+          c.beginPath();
+          c.ellipse(cx, cy, rx * 1.2, ry * 1.2, 0, 0, Math.PI * 2);
+          c.fillStyle = auraColor;
+          c.fill();
+          // Inner core (bright)
           c.globalAlpha = pulse;
           c.beginPath();
           c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-          c.fillStyle = auraColor;
-          c.fill();
-          c.globalAlpha = pulse * 0.6;
-          c.beginPath();
-          c.ellipse(cx, cy, rx * 1.3, ry * 1.3, 0, 0, Math.PI * 2);
           c.fillStyle = auraColor;
           c.fill();
           c.restore();
