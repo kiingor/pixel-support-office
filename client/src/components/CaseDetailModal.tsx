@@ -37,7 +37,20 @@ export function CaseDetailModal() {
   if (!caseDetailOpen || !caseInfo) return null;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(caseInfo.promptIa || '');
+    const text = caseInfo.promptIa || '';
+    // Fallback for HTTP (no clipboard API without HTTPS)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
