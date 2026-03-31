@@ -26,6 +26,7 @@ export function renderFrame(
   panY: number,
   queueSize = 0,
   sectorStats?: SectorStats,
+  workingAgents?: Set<string>,
 ): void {
   ctx.clearRect(0, 0, canvasW, canvasH);
 
@@ -69,7 +70,7 @@ export function renderFrame(
     const drawX = Math.round(ch.pixelX * zoom);
     const drawY = Math.round((ch.pixelY - TILE_SIZE + sittingOffset) * zoom);
     const charZY = ch.pixelY + TILE_SIZE;
-    const isWorking = ch.state === CharacterState.TYPE || ch.state === CharacterState.TALK;
+    const isWorking = workingAgents?.has(ch.name) || ch.state === CharacterState.TALK;
     const isWalking = ch.state === CharacterState.WALK;
 
     drawables.push({
@@ -127,7 +128,7 @@ export function renderFrame(
   renderBubbles(ctx, characters, zoom);
 
   // Render agent names
-  renderAgentNames(ctx, characters, zoom);
+  renderAgentNames(ctx, characters, zoom, workingAgents);
 
   // Render sector labels
   renderSectorLabels(ctx, zoom);
@@ -295,6 +296,7 @@ function renderAgentNames(
   ctx: CanvasRenderingContext2D,
   characters: Character[],
   zoom: number,
+  workingAgents?: Set<string>,
 ): void {
   if (zoom < 2) return; // Too small to read
 
@@ -327,9 +329,9 @@ function renderAgentNames(
     ctx.fillStyle = roleColor;
     ctx.fillText(ROLE_SHORT[ch.role] || ch.role, cx, cy + fontSize * 0.9);
 
-    // Status indicator for working agents
-    if (ch.state === CharacterState.TYPE || ch.state === CharacterState.TALK) {
-      renderBusyIndicator(ctx, cx, cy, zoom, ch.state, ch.role);
+    // Status indicator for working agents (based on server work status, not sprite state)
+    if (workingAgents?.has(ch.name) || ch.state === CharacterState.TALK) {
+      renderBusyIndicator(ctx, cx, cy, zoom, CharacterState.TYPE, ch.role);
     }
   }
 }

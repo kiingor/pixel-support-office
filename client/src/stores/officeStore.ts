@@ -14,6 +14,7 @@ interface AgentInfo {
   name: string;
   role: AgentRole;
   status: string;
+  workStatus?: string; // What the agent is currently doing (from server)
 }
 
 interface TicketInfo {
@@ -86,6 +87,11 @@ interface OfficeStoreState {
   chatLoading: boolean;
   queueSize: number;
   activeConversations: Map<string, ActiveConversation>;
+  // Agent work status (what each agent is doing right now)
+  agentWorkStatuses: Map<string, string>; // agentName → description
+  setAgentWorkStatus: (agentName: string, status: string) => void;
+  clearAgentWorkStatus: (agentName: string) => void;
+
   // Meeting state
   meetingActive: boolean;
   meetingTopic: string;
@@ -155,6 +161,22 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   chatLoading: false,
   queueSize: 0,
   activeConversations: new Map(),
+  agentWorkStatuses: new Map(),
+  setAgentWorkStatus: (agentName, status) => {
+    const m = new Map(get().agentWorkStatuses);
+    m.set(agentName, status);
+    set({ agentWorkStatuses: m });
+    // Also update OfficeState for renderer aura
+    const os = get().officeState;
+    if (os) os.workingAgents.add(agentName);
+  },
+  clearAgentWorkStatus: (agentName) => {
+    const m = new Map(get().agentWorkStatuses);
+    m.delete(agentName);
+    set({ agentWorkStatuses: m });
+    const os = get().officeState;
+    if (os) os.workingAgents.delete(agentName);
+  },
   meetingActive: false,
   meetingTopic: '',
   meetingParticipants: [],
@@ -171,7 +193,8 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     const agents: AgentInfo[] = [];
     const profiles = get().agentProfiles;
     for (const ch of os.characters.values()) {
-      agents.push({ id: ch.id, name: ch.name, role: ch.role, status: ch.state });
+      const workStatus = get().agentWorkStatuses.get(ch.name);
+      agents.push({ id: ch.id, name: ch.name, role: ch.role, status: ch.state, workStatus });
       if (!profiles.has(ch.id)) {
         profiles.set(ch.id, {
           id: ch.id,

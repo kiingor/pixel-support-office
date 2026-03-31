@@ -789,7 +789,7 @@ async function handleSupportMessage(channelId: string, author: string, message: 
   });
 
   emitLog(`${agentName} analisando mensagem de ${author}...`);
-  io.emit('agent:working', { role: 'suporte', agentName, agentId: resolvedAgentId, action: 'analyzing' });
+  io.emit('agent:working', { role: 'suporte', agentName, agentId: resolvedAgentId, action: `Atendendo: ${author}` });
 
   // Emit bubble showing the agent is processing a Discord message
   io.emit('agent:bubble', {
@@ -931,7 +931,7 @@ async function sendSupportResponse(channelId: string, ticketId: string, response
 
 async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string, supportAgentId: string) {
   emitLog(`${qaAgentName} analisando ${bugId}...`);
-  io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: 'analyzing' });
+  io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: `Analisando ${bugId}` });
   io.emit('agent:bubble', {
     role: 'qa', agentName: qaAgentName,
     text: `Analisando ${bugId}...`, type: 'processing', duration: 5000,
@@ -955,7 +955,7 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
   io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Enviando análise para o gerente', type: 'handoff', duration: 5000 });
 
   // Step 2: QA Manager reviews
-  io.emit('agent:working', { role: 'qa_manager', agentName: qaManagerName, action: 'reviewing' });
+  io.emit('agent:working', { role: 'qa_manager', agentName: qaManagerName, action: `Revisando ${bugId}` });
   io.emit('agent:bubble', {
     role: 'qa_manager', agentName: qaManagerName,
     text: `Revisando análise do ${bugId}...`, type: 'processing', duration: 6000,
@@ -1045,7 +1045,7 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
 async function processDev(channelId: string, ticketId: string, qaReport: any, bugId: string, supportAgentId: string) {
   const caseId = `CASE-${++caseCounter}`;
   emitLog(`${devAgentName} gerando caso ${caseId}...`);
-  io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: 'investigating' });
+  io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: `Criando ${caseId} (${bugId})` });
   io.emit('agent:bubble', {
     role: 'dev', agentName: devAgentName,
     text: `Gerando caso ${caseId}...`, type: 'processing', duration: 5000,
@@ -1058,7 +1058,7 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
   io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: 'Enviando caso para Tech Lead', type: 'handoff', duration: 5000 });
 
   // Step 2: Dev Lead reviews
-  io.emit('agent:working', { role: 'dev_lead', agentName: devLeadName, action: 'reviewing' });
+  io.emit('agent:working', { role: 'dev_lead', agentName: devLeadName, action: `Revisando ${caseId}` });
   io.emit('agent:bubble', {
     role: 'dev_lead', agentName: devLeadName,
     text: `Revisando ${caseId}...`, type: 'processing', duration: 6000,

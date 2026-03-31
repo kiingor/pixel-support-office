@@ -33,6 +33,8 @@ export class OfficeState {
   blockedTiles: Set<string>;
   tasks: Map<string, AgentTask> = new Map();
   queueSize = 0;
+  workingAgents = new Set<string>(); // Agent names currently working (from server events)
+
   sectorStats: SectorStats = {
     suporte: { total: 0, resolvidos: 0, fila: 0, agentes: 0 },
     qa: { analisados: 0, aprovados: 0, agentes: 0 },
@@ -446,6 +448,7 @@ export class OfficeState {
       this.panY,
       this.queueSize,
       this.sectorStats,
+      this.workingAgents,
     );
   }
 

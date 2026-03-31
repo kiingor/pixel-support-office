@@ -118,7 +118,10 @@ export function ControlPanel() {
                       </div>
                     )}
                     <div style={{ fontSize: 10, color: '#5a7a9a' }}>
-                      {ROLE_LABELS[agent.role]} - <span style={{ color: agent.status === 'type' ? '#2ecc71' : '#f39c12' }}>{agent.status}</span>
+                      {ROLE_LABELS[agent.role]} - {agent.workStatus
+                        ? <span style={{ color: '#2ecc71', fontWeight: 600 }}>{agent.workStatus}</span>
+                        : <span style={{ color: '#666' }}>Ocioso</span>
+                      }
                     </div>
                   </div>
                   {renamingId !== agent.id && <span style={{ fontSize: 12, color: '#334' }}>{'>'}</span>}

@@ -71,7 +71,16 @@ export function useWebSocket() {
 
     // Agent events
     socket.on('agent:working', (data) => {
-      useOfficeStore.getState().addLogEntry(`${data.agentName} (${data.role}): ${data.action}`);
+      const store = useOfficeStore.getState();
+      store.addLogEntry(`${data.agentName} (${data.role}): ${data.action}`);
+      // Set work status so UI shows what agent is doing
+      store.setAgentWorkStatus(data.agentName, data.action);
+      store.syncAgents();
+      // Auto-clear after 30 seconds (agent may finish without explicit clear)
+      setTimeout(() => {
+        useOfficeStore.getState().clearAgentWorkStatus(data.agentName);
+        useOfficeStore.getState().syncAgents();
+      }, 30000);
     });
 
     socket.on('agent:renamed', (data) => {
