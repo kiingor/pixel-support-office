@@ -96,8 +96,25 @@ export async function initDiscord(onMessage: MessageHandler): Promise<boolean> {
   }
 }
 
+// Dedup: track last sent message per channel to prevent duplicate responses
+const lastSentPerChannel = new Map<string, { time: number; hash: string }>();
+
 export async function sendDiscordMessage(channelId: string, content: string): Promise<boolean> {
   if (!discordClient) return false;
+
+  // Prevent sending identical/similar messages to the same channel within 10 seconds
+  const now = Date.now();
+  const contentHash = content.slice(0, 100); // Compare first 100 chars
+  const last = lastSentPerChannel.get(channelId);
+  if (last && now - last.time < 10000 && last.hash === contentHash) {
+    console.log(`[Discord] Blocked duplicate message to ${channelId}`);
+    return false;
+  }
+  lastSentPerChannel.set(channelId, { time: now, hash: contentHash });
+  // Clean old entries
+  if (lastSentPerChannel.size > 100) {
+    for (const [k, v] of lastSentPerChannel) { if (now - v.time > 60000) lastSentPerChannel.delete(k); }
+  }
 
   try {
     const channel = await discordClient.channels.fetch(channelId);
