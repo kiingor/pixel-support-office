@@ -560,13 +560,18 @@ ${codeContext}`;
   }
 }
 
-// Generic chat with any agent — uses Gemini (personality/thinking layer), falls back to Claude
+// Generic chat with any agent — uses Gemini, falls back to Haiku
+// CEO uses Gemini Flash (better at structured JSON actions), others use Lite
 export async function chatWithAgent(
   agentName: string,
   systemPrompt: string,
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
 ): Promise<string> {
+  // Detect if this is CEO (needs better model for action blocks)
+  const isCEO = systemPrompt.includes('CEO') || systemPrompt.includes('PODER TOTAL');
+  const model = isCEO ? GEMINI_FLASH : THINKING_MODEL;
+
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
     ...conversationHistory.map(m => ({
@@ -576,11 +581,11 @@ export async function chatWithAgent(
     { role: 'user', content: userMessage },
   ];
 
-  // Try OpenRouter first
+  // Try Gemini first
   try {
-    const response = await openrouter.chat.completions.create({
-      model: THINKING_MODEL,
-      max_tokens: 1024,
+    const response = await gemini.chat.completions.create({
+      model,
+      max_tokens: isCEO ? 2048 : 1024,
       messages,
     });
     return response.choices[0]?.message?.content || 'Sem resposta.';

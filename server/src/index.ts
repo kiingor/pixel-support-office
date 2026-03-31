@@ -49,7 +49,11 @@ interface SupportAgent {
   currentChannelId: string | null;
 }
 const supportAgents: SupportAgent[] = [];
-const logAnalyzerAgents: string[] = []; // Names of all log_analyzer agents
+const logAnalyzerAgents: string[] = [];
+const qaAgents: string[] = [];    // All QA agent names for round-robin
+const devAgents: string[] = [];   // All DEV agent names for round-robin
+let qaRoundRobin = 0;
+let devRoundRobin = 0;
 const ticketQueue: Array<{ author: string; content: string; channelId: string }> = [];
 
 // In-memory conversation history fallback (in case DB fails)
@@ -387,6 +391,22 @@ Sempre responda em português brasileiro. Seja um líder firme mas justo.`;
 // --- Helper: find idle support agent ---
 function findIdleAgent(): SupportAgent | undefined {
   return supportAgents.find(a => !a.busy);
+}
+
+// Round-robin QA agent selection
+function getNextQAAgent(): string {
+  if (qaAgents.length === 0) return qaAgentName;
+  const name = qaAgents[qaRoundRobin % qaAgents.length];
+  qaRoundRobin++;
+  return name;
+}
+
+// Round-robin DEV agent selection
+function getNextDEVAgent(): string {
+  if (devAgents.length === 0) return devAgentName;
+  const name = devAgents[devRoundRobin % devAgents.length];
+  devRoundRobin++;
+  return name;
 }
 
 // --- Helper: build office state context for CEO ---
@@ -959,9 +979,14 @@ async function sendSupportResponse(channelId: string, ticketId: string, response
 // --- QA AGENT ---
 
 async function processQA(channelId: string, ticketId: string, bugData: any, bugId: string, supportAgentId: string) {
-  emitLog(`${qaAgentName} analisando ${bugId}...`);
-  io.emit('agent:working', { role: 'qa', agentName: qaAgentName, action: `Analisando ${bugId}` });
-  dbLogAgentActivity(qaAgentName, 'qa', 'Análise QA', `Analisando ${bugId}: ${(bugData.titulo || bugData.descricao || '').slice(0, 100)}`).catch(() => {});
+  // Round-robin: pick next available QA agent
+  const currentQA = getNextQAAgent();
+  // Override qaAgentName locally for this pipeline execution
+  const origQA = qaAgentName;
+  qaAgentName = currentQA;
+  emitLog(`${currentQA} analisando ${bugId}...`);
+  io.emit('agent:working', { role: 'qa', agentName: currentQA, action: `Analisando ${bugId}` });
+  dbLogAgentActivity(currentQA, 'qa', 'Análise QA', `Analisando ${bugId}: ${(bugData.titulo || bugData.descricao || '').slice(0, 100)}`).catch(() => {});
   io.emit('agent:bubble', {
     role: 'qa', agentName: qaAgentName,
     text: `Analisando ${bugId}...`, type: 'processing', duration: 5000,
@@ -1073,10 +1098,13 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
 // --- DEV AGENT ---
 
 async function processDev(channelId: string, ticketId: string, qaReport: any, bugId: string, supportAgentId: string) {
+  // Round-robin: pick next available DEV agent
+  const currentDEV = getNextDEVAgent();
+  devAgentName = currentDEV;
   const caseId = `CASE-${++caseCounter}`;
-  emitLog(`${devAgentName} gerando caso ${caseId}...`);
-  io.emit('agent:working', { role: 'dev', agentName: devAgentName, action: `Criando ${caseId} (${bugId})` });
-  dbLogAgentActivity(devAgentName, 'dev', 'Criando caso', `Gerando ${caseId} para ${bugId}`).catch(() => {});
+  emitLog(`${currentDEV} gerando caso ${caseId}...`);
+  io.emit('agent:working', { role: 'dev', agentName: currentDEV, action: `Criando ${caseId} (${bugId})` });
+  dbLogAgentActivity(currentDEV, 'dev', 'Criando caso', `Gerando ${caseId} para ${bugId}`).catch(() => {});
   io.emit('agent:bubble', {
     role: 'dev', agentName: devAgentName,
     text: `Gerando caso ${caseId}...`, type: 'processing', duration: 5000,
@@ -1276,12 +1304,9 @@ io.on('connection', (socket) => {
     // Update fixed agent names if a senior role is being registered
     if (role === 'qa_manager') qaManagerName = data.name;
     if (role === 'dev_lead') devLeadName = data.name;
-    if (role === 'qa') qaAgentName = data.name;
-    if (role === 'dev') devAgentName = data.name;
-    if (role === 'log_analyzer') {
-      logAgentName = data.name;
-      if (!logAnalyzerAgents.includes(data.name)) logAnalyzerAgents.push(data.name);
-    }
+    if (role === 'qa') { qaAgentName = data.name; if (!qaAgents.includes(data.name)) qaAgents.push(data.name); }
+    if (role === 'dev') { devAgentName = data.name; if (!devAgents.includes(data.name)) devAgents.push(data.name); }
+    if (role === 'log_analyzer') { logAgentName = data.name; if (!logAnalyzerAgents.includes(data.name)) logAnalyzerAgents.push(data.name); }
     if (role === 'ceo') ceoAgentName = data.name;
 
     // Only track support agents in the in-memory roster (for ticket routing)
@@ -1721,14 +1746,12 @@ async function start() {
             });
           }
         }
-        // Track ALL log_analyzer agents for distribution
-        if (a.type === 'log_analyzer') {
-          if (!logAnalyzerAgents.includes(a.name)) {
-            logAnalyzerAgents.push(a.name);
-          }
-        }
+        // Track ALL agents per role for round-robin distribution
+        if (a.type === 'log_analyzer' && !logAnalyzerAgents.includes(a.name)) logAnalyzerAgents.push(a.name);
+        if (a.type === 'qa' && !qaAgents.includes(a.name)) qaAgents.push(a.name);
+        if (a.type === 'dev' && !devAgents.includes(a.name)) devAgents.push(a.name);
       }
-      console.log(`[Server] Loaded ${dbAgents.length} agents from DB (${supportAgents.length} support, ${logAnalyzerAgents.length} log_analyzer)`);
+      console.log(`[Server] Loaded ${dbAgents.length} agents from DB (${supportAgents.length} support, ${qaAgents.length} qa, ${devAgents.length} dev, ${logAnalyzerAgents.length} log)`);
     } catch (e) {
       console.error('Failed to load agents from DB:', e);
     }
