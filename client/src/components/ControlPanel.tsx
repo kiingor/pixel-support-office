@@ -27,6 +27,8 @@ export function ControlPanel() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [caseFilter, setCaseFilter] = useState<'all' | 'open' | 'resolved'>('all');
+  const [caseSearch, setCaseSearch] = useState('');
 
   if (meetingActive) return <MeetingChat />;
   if (chatAgentId) return <AgentChat />;
@@ -159,9 +161,40 @@ export function ControlPanel() {
         {/* === CASOS === */}
         {activeTab === 'Casos' && (
           <div>
+            {/* Filters */}
+            <div style={{ marginBottom: 8 }}>
+              <input
+                type="text"
+                placeholder="Buscar caso, bug ou titulo..."
+                value={caseSearch}
+                onChange={e => setCaseSearch(e.target.value)}
+                style={{ width: '100%', padding: '6px 10px', background: '#0a1428', border: '1px solid #1a3a5c', borderRadius: 4, color: '#fff', fontSize: 11, marginBottom: 6 }}
+              />
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['all', 'open', 'resolved'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setCaseFilter(f)}
+                    className={`btn btn-sm ${caseFilter === f ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ flex: 1, fontSize: 10 }}
+                  >
+                    {f === 'all' ? `Todos (${cases.length})` : f === 'open' ? `Abertos (${cases.filter(c => c.status !== 'resolved').length})` : `Resolvidos (${cases.filter(c => c.status === 'resolved').length})`}
+                  </button>
+                ))}
+              </div>
+            </div>
             {cases.length === 0 && <div className="text-muted">Nenhum caso aberto</div>}
-            {[...cases].sort((a, b) => {
-              // Sort by case number descending (most recent first)
+            {[...cases]
+            .filter(c => {
+              if (caseFilter === 'open' && c.status === 'resolved') return false;
+              if (caseFilter === 'resolved' && c.status !== 'resolved') return false;
+              if (caseSearch) {
+                const q = caseSearch.toLowerCase();
+                return c.casoId.toLowerCase().includes(q) || (c.bugId || '').toLowerCase().includes(q) || c.titulo.toLowerCase().includes(q) || (c.createdBy || '').toLowerCase().includes(q);
+              }
+              return true;
+            })
+            .sort((a, b) => {
               const numA = parseInt(a.casoId.replace(/\D/g, '')) || 0;
               const numB = parseInt(b.casoId.replace(/\D/g, '')) || 0;
               return numB - numA;
