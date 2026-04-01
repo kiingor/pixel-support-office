@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
 import { addBubble } from '../engine/characters';
+import { SECTORS } from '../layout/sectorConfig';
+import { TILE_SIZE } from '../types/office';
 import type { SectorId, AgentRole } from '../types/agents';
 import { generateAgentPersonality } from '../types/agentProfile';
 
@@ -210,11 +212,25 @@ export function useWebSocket() {
         }
         store.addLogEntry(`${agent.name} indo falar com ${data.targetAgentName}`);
       } else if (data.toSectorId === 'MEETING_ROOM') {
-        // Meeting room: sit at the table
-        os.sendAgentToMeetingRoom(agent.id);
+        const success = os.sendAgentToMeetingRoom(agent.id);
+        if (!success) {
+          // Fallback: try sendAgentToSector instead
+          const sectorSuccess = os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
+          if (!sectorSuccess) {
+            console.warn(`[Walk] ${agent.name} pathfinding failed for MEETING_ROOM, teleporting to door`);
+            const meetingDoor = SECTORS.MEETING_ROOM.doorPosition;
+            agent.col = meetingDoor.col;
+            agent.row = meetingDoor.row;
+            agent.pixelX = meetingDoor.col * TILE_SIZE;
+            agent.pixelY = meetingDoor.row * TILE_SIZE;
+          }
+        }
         store.addLogEntry(`${agent.name} indo para a reuniao`);
       } else {
-        os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
+        const success = os.sendAgentToSector(agent.id, data.toSectorId as SectorId);
+        if (!success) {
+          console.warn(`[Walk] ${agent.name} pathfinding failed for ${data.toSectorId}`);
+        }
         store.addLogEntry(`${agent.name} caminhando para ${data.toSectorId}`);
       }
 
