@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useOfficeStore } from '../stores/officeStore';
 import { AgentChat } from './AgentChat';
 import { MeetingChat } from './MeetingChat';
 import type { AgentRole } from '../types/agents';
+
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
+  window.location.hostname === 'localhost' ? 'http://localhost:3001' : ''
+);
 
 const TABS = ['Equipe', 'Fila', 'Casos', 'Chat', 'Logs'] as const;
 const TAB_ICONS: Record<string, string> = { Equipe: '\u{1F465}', Fila: '\u{1F4CB}', Casos: '\u{1F41B}', Chat: '\u{1F4AC}', Logs: '\u{1F4C4}' };
@@ -29,6 +33,32 @@ export function ControlPanel() {
   const [renameValue, setRenameValue] = useState('');
   const [caseFilter, setCaseFilter] = useState<'all' | 'open' | 'resolved'>('all');
   const [caseSearch, setCaseSearch] = useState('');
+  const [chatLoaded, setChatLoaded] = useState(false);
+
+  // Load agent conversations from DB when Chat tab is first opened
+  useEffect(() => {
+    if (activeTab === 'Chat' && !chatLoaded && agentConversations.length === 0) {
+      setChatLoaded(true);
+      fetch(`${SERVER_URL}/api/agent-conversations`)
+        .then(r => r.json())
+        .then(data => {
+          const convs = (data.conversations || []).reverse();
+          for (const c of convs) {
+            const p = c.payload as any;
+            if (p?.fromAgent && p?.toAgent) {
+              useOfficeStore.getState().addAgentConversation({
+                from: p.fromAgent,
+                fromRole: p.fromRole || '',
+                to: p.toAgent,
+                toRole: p.toRole || '',
+                message: p.message || c.message,
+              });
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [activeTab, chatLoaded, agentConversations.length]);
 
   if (meetingActive) return <MeetingChat />;
   if (chatAgentId) return <AgentChat />;
