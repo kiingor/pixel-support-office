@@ -329,8 +329,18 @@ function renderAgentNames(
     ctx.strokeStyle = '#ffffffaa';
     ctx.lineWidth = 2.5;
     ctx.strokeText(displayName, cx, cy);
-    ctx.fillStyle = isLeader ? '#f0c040' : '#000000';
+    ctx.fillStyle = '#000000';
     ctx.fillText(displayName, cx, cy);
+    // Draw the star in gold on top of the black text
+    if (isLeader) {
+      const starWidth = ctx.measureText('★ ').width;
+      const nameWidth = ctx.measureText(displayName).width;
+      const starX = cx - nameWidth / 2;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#f0c040';
+      ctx.fillText('★', starX, cy);
+      ctx.textAlign = 'center';
+    }
 
     // Role label below name (smaller, colored)
     const roleSize = Math.max(7, zoom * 3.5);

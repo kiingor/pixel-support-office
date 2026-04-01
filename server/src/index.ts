@@ -1403,15 +1403,24 @@ io.on('connection', (socket) => {
       emitLog(`Novo agente contratado: ${data.name} (${role}) — Personalidade: ${personality}`);
     }
 
-    // Persist to Supabase using the client-generated UUID so fire/hire stay in sync
+    // Persist to Supabase with full prompt and specialization
+    const ROLE_SPECIALIZATIONS: Record<string, string> = {
+      suporte: 'Atendimento ao cliente e classificação de demandas',
+      qa: 'Análise de bugs e controle de qualidade',
+      qa_manager: 'Revisão e aprovação de análises de QA',
+      dev: 'Análise de erros e criação de casos técnicos',
+      dev_lead: 'Revisão técnica e aprovação de casos',
+      log_analyzer: 'Monitoramento e análise de logs do sistema',
+      ceo: 'Gestão do escritório e tomada de decisões',
+    };
     try {
       await dbCreateAgent({
         id: data.id,
         name: data.name,
         type: role,
-        system_prompt: '',
+        system_prompt: buildPersonalizedPrompt(role, data.name),
         personality,
-        specialization: '',
+        specialization: ROLE_SPECIALIZATIONS[role] || '',
       });
     } catch (e) {
       console.error('Failed to persist agent to DB:', e);
