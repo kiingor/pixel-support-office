@@ -322,13 +322,15 @@ function renderAgentNames(
     // Name ABOVE the character
     const cy = Math.round((ch.pixelY - TILE_SIZE) * zoom - 6 * zoom);
 
-    // Agent name (bold, larger)
+    // Agent name (bold, larger) + star for leaders
+    const isLeader = ch.role === 'qa_manager' || ch.role === 'dev_lead' || ch.role === 'ceo';
+    const displayName = isLeader ? `★ ${ch.name}` : ch.name;
     ctx.font = `bold ${fontSize}px monospace`;
     ctx.strokeStyle = '#ffffffaa';
     ctx.lineWidth = 2.5;
-    ctx.strokeText(ch.name, cx, cy);
-    ctx.fillStyle = '#000000';
-    ctx.fillText(ch.name, cx, cy);
+    ctx.strokeText(displayName, cx, cy);
+    ctx.fillStyle = isLeader ? '#f0c040' : '#000000';
+    ctx.fillText(displayName, cx, cy);
 
     // Role label below name (smaller, colored)
     const roleSize = Math.max(7, zoom * 3.5);
