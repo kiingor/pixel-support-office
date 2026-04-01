@@ -1798,8 +1798,11 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const clientDist = join(__dirname, '..', '..', 'client', 'dist');
-app.use(express.static(clientDist));
-app.get('*', (_req, res) => res.sendFile(join(clientDist, 'index.html')));
+app.use(express.static(clientDist, { maxAge: 0, etag: false }));
+app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(join(clientDist, 'index.html'));
+});
 
 // --- Start Server ---
 const PORT = parseInt(process.env.PORT || '3001');
