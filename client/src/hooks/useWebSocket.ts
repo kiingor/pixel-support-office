@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
 import { addBubble } from '../engine/characters';
 import { SECTORS } from '../layout/sectorConfig';
-import { TILE_SIZE } from '../types/office';
+import { TILE_SIZE, CharacterState } from '../types/office';
 import type { SectorId, AgentRole } from '../types/agents';
 import { generateAgentPersonality } from '../types/agentProfile';
 
@@ -217,12 +217,16 @@ export function useWebSocket() {
           // Fallback: try sendAgentToSector instead
           const sectorSuccess = os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
           if (!sectorSuccess) {
-            console.warn(`[Walk] ${agent.name} pathfinding failed for MEETING_ROOM, teleporting to door`);
-            const meetingDoor = SECTORS.MEETING_ROOM.doorPosition;
-            agent.col = meetingDoor.col;
-            agent.row = meetingDoor.row;
-            agent.pixelX = meetingDoor.col * TILE_SIZE;
-            agent.pixelY = meetingDoor.row * TILE_SIZE;
+            console.warn(`[Walk] ${agent.name} pathfinding failed, teleporting to meeting room`);
+            // Spread agents across meeting room seats instead of all on the door
+            const seats = SECTORS.MEETING_ROOM.seatPositions;
+            const seatIdx = Math.floor(Math.random() * seats.length);
+            const seat = seats[seatIdx] || SECTORS.MEETING_ROOM.doorPosition;
+            agent.col = seat.col;
+            agent.row = seat.row;
+            agent.pixelX = seat.col * TILE_SIZE;
+            agent.pixelY = seat.row * TILE_SIZE;
+            agent.state = CharacterState.TALK;
           }
         }
         store.addLogEntry(`${agent.name} indo para a reuniao`);

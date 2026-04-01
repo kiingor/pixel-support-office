@@ -216,22 +216,35 @@ export function sendCharacterTo(
   tiles: TileType[][],
   blockedTiles: Set<string>,
 ): boolean {
-  // Temporarily unblock the agent's current position and seat (they're sitting on furniture)
-  const currentKey = `${ch.col},${ch.row}`;
-  const seatKey = `${ch.seatCol},${ch.seatRow}`;
-  const wasCurrentBlocked = blockedTiles.has(currentKey);
-  const wasSeatBlocked = blockedTiles.has(seatKey);
-  if (wasCurrentBlocked) blockedTiles.delete(currentKey);
-  if (wasSeatBlocked) blockedTiles.delete(seatKey);
+  // Temporarily unblock a 3-tile radius around the agent (they're surrounded by desks)
+  const unblocked: string[] = [];
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const key = `${ch.col + dx},${ch.row + dy}`;
+      if (blockedTiles.has(key)) {
+        blockedTiles.delete(key);
+        unblocked.push(key);
+      }
+    }
+  }
+  // Also unblock around the destination
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const key = `${targetCol + dx},${targetRow + dy}`;
+      if (blockedTiles.has(key)) {
+        blockedTiles.delete(key);
+        unblocked.push(key);
+      }
+    }
+  }
 
   let path = findPath(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
   if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) {
     path = findPathNear(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
   }
 
-  // Restore blocked tiles
-  if (wasCurrentBlocked) blockedTiles.add(currentKey);
-  if (wasSeatBlocked) blockedTiles.add(seatKey);
+  // Restore all unblocked tiles
+  for (const key of unblocked) blockedTiles.add(key);
 
   if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) return false;
 
