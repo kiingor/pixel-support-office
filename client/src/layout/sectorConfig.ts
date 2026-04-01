@@ -39,17 +39,40 @@ export const SECTORS: Record<SectorId, SectorConfig> = {
     labelColor: '#cc8844',
     bounds: { colStart: 23, colEnd: 38, rowStart: 1, rowEnd: 9 },
     seatPositions: [
-      // Left side seats
+      // Left side chairs (col 27-28)
       { col: 27, row: 2, facingDir: Direction.RIGHT },
+      { col: 27, row: 3, facingDir: Direction.RIGHT },
       { col: 27, row: 4, facingDir: Direction.RIGHT },
+      { col: 27, row: 5, facingDir: Direction.RIGHT },
       { col: 27, row: 6, facingDir: Direction.RIGHT },
-      // Right side seats
+      { col: 27, row: 7, facingDir: Direction.RIGHT },
+      { col: 28, row: 2, facingDir: Direction.RIGHT },
+      { col: 28, row: 4, facingDir: Direction.RIGHT },
+      { col: 28, row: 6, facingDir: Direction.RIGHT },
+      // Right side chairs (col 33-34)
       { col: 34, row: 2, facingDir: Direction.LEFT },
+      { col: 34, row: 3, facingDir: Direction.LEFT },
       { col: 34, row: 4, facingDir: Direction.LEFT },
+      { col: 34, row: 5, facingDir: Direction.LEFT },
       { col: 34, row: 6, facingDir: Direction.LEFT },
-      // Head seats
-      { col: 30, row: 9, facingDir: Direction.UP },
-      { col: 31, row: 9, facingDir: Direction.UP },
+      { col: 34, row: 7, facingDir: Direction.LEFT },
+      { col: 33, row: 2, facingDir: Direction.LEFT },
+      { col: 33, row: 4, facingDir: Direction.LEFT },
+      { col: 33, row: 6, facingDir: Direction.LEFT },
+      // Head and foot seats
+      { col: 30, row: 1, facingDir: Direction.DOWN },
+      { col: 31, row: 1, facingDir: Direction.DOWN },
+      { col: 30, row: 8, facingDir: Direction.UP },
+      { col: 31, row: 8, facingDir: Direction.UP },
+      // Standing spots around the room
+      { col: 24, row: 2, facingDir: Direction.RIGHT },
+      { col: 24, row: 4, facingDir: Direction.RIGHT },
+      { col: 24, row: 6, facingDir: Direction.RIGHT },
+      { col: 24, row: 8, facingDir: Direction.RIGHT },
+      { col: 37, row: 2, facingDir: Direction.LEFT },
+      { col: 37, row: 4, facingDir: Direction.LEFT },
+      { col: 37, row: 6, facingDir: Direction.LEFT },
+      { col: 37, row: 8, facingDir: Direction.LEFT },
     ],
     doorPosition: { col: 30, row: 10 },
   },

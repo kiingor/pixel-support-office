@@ -7,6 +7,8 @@ import { TILE_SIZE, CharacterState } from '../types/office';
 import type { SectorId, AgentRole } from '../types/agents';
 import { generateAgentPersonality } from '../types/agentProfile';
 
+let meetingSeatCounter = 0; // Increments each time an agent is sent to meeting room
+
 // In production, connect to same host (Vercel rewrites proxy to backend).
 // In dev, use localhost:3001 directly.
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
@@ -212,23 +214,28 @@ export function useWebSocket() {
         }
         store.addLogEntry(`${agent.name} indo falar com ${data.targetAgentName}`);
       } else if (data.toSectorId === 'MEETING_ROOM') {
-        // Walk to meeting room: try direct path to door, then to a seat
-        const meetingDoor = SECTORS.MEETING_ROOM.doorPosition;
-        const success = sendCharacterTo(agent, meetingDoor.col, meetingDoor.row, os.tiles, os.blockedTiles);
-        if (success) {
-          console.log(`[Walk] ${agent.name} walking to meeting room door`);
-        } else {
-          // Fallback: walk to hallway aligned with meeting room
-          const hallwaySuccess = sendCharacterTo(agent, meetingDoor.col, 11, os.tiles, os.blockedTiles);
-          if (hallwaySuccess) {
-            console.log(`[Walk] ${agent.name} walking to hallway near meeting room`);
-          } else {
-            console.warn(`[Walk] ${agent.name} pathfinding failed, teleporting to meeting room`);
-            agent.col = meetingDoor.col;
-            agent.row = meetingDoor.row;
-            agent.pixelX = meetingDoor.col * TILE_SIZE;
-            agent.pixelY = meetingDoor.row * TILE_SIZE;
-          }
+        // Assign a unique seat in the meeting room
+        const seats = SECTORS.MEETING_ROOM.seatPositions;
+        if (!meetingSeatCounter) meetingSeatCounter = 0;
+        const seatIdx = meetingSeatCounter % seats.length;
+        meetingSeatCounter++;
+        const seat = seats[seatIdx];
+
+        // Try to walk to the assigned seat
+        let success = sendCharacterTo(agent, seat.col, seat.row, os.tiles, os.blockedTiles);
+        if (!success) {
+          // Fallback: try walking to the door first
+          success = sendCharacterTo(agent, 30, 10, os.tiles, os.blockedTiles);
+        }
+        if (!success) {
+          // Teleport directly to the assigned seat
+          console.warn(`[Walk] ${agent.name} teleporting to meeting seat (${seat.col},${seat.row})`);
+          agent.col = seat.col;
+          agent.row = seat.row;
+          agent.pixelX = seat.col * TILE_SIZE;
+          agent.pixelY = seat.row * TILE_SIZE;
+          agent.state = CharacterState.TALK;
+          agent.direction = seat.facingDir;
         }
         store.addLogEntry(`${agent.name} indo para a reuniao`);
       } else {
@@ -248,19 +255,19 @@ export function useWebSocket() {
     socket.on('agent:return_to_seat', (data: { agentName: string }) => {
       const os = useOfficeStore.getState().officeState;
       if (!os) return;
+      // Reset meeting seat counter
+      meetingSeatCounter = 0;
       for (const ch of os.characters.values()) {
         if (ch.name === data.agentName) {
-          // Try walking back to seat
-          const success = sendCharacterTo(ch, ch.seatCol, ch.seatRow, os.tiles, os.blockedTiles);
-          if (!success) {
-            // Teleport if pathfinding fails and sit down
-            ch.col = ch.seatCol;
-            ch.row = ch.seatRow;
-            ch.pixelX = ch.seatCol * TILE_SIZE;
-            ch.pixelY = ch.seatRow * TILE_SIZE;
-            ch.state = CharacterState.TYPE;
-          }
-          // If walking, state is already WALK — will become TYPE when arriving
+          // Always teleport back to seat for reliability
+          // (walking back often fails because meeting room door is blocked by other agents)
+          ch.col = ch.seatCol;
+          ch.row = ch.seatRow;
+          ch.pixelX = ch.seatCol * TILE_SIZE;
+          ch.pixelY = ch.seatRow * TILE_SIZE;
+          ch.state = CharacterState.TYPE;
+          ch.path = [];
+          ch.pathIndex = 0;
           break;
         }
       }
