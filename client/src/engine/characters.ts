@@ -216,15 +216,26 @@ export function sendCharacterTo(
   tiles: TileType[][],
   blockedTiles: Set<string>,
 ): boolean {
-  const path = findPath(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
+  // Temporarily unblock the agent's current position and seat (they're sitting on furniture)
+  const currentKey = `${ch.col},${ch.row}`;
+  const seatKey = `${ch.seatCol},${ch.seatRow}`;
+  const wasCurrentBlocked = blockedTiles.has(currentKey);
+  const wasSeatBlocked = blockedTiles.has(seatKey);
+  if (wasCurrentBlocked) blockedTiles.delete(currentKey);
+  if (wasSeatBlocked) blockedTiles.delete(seatKey);
+
+  let path = findPath(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
   if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) {
-    // Try nearby
-    const nearPath = findPathNear(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
-    if (nearPath.length === 0) return false;
-    ch.path = nearPath;
-  } else {
-    ch.path = path;
+    path = findPathNear(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
   }
+
+  // Restore blocked tiles
+  if (wasCurrentBlocked) blockedTiles.add(currentKey);
+  if (wasSeatBlocked) blockedTiles.add(seatKey);
+
+  if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) return false;
+
+  ch.path = path;
   ch.pathIndex = 0;
   ch.state = CharacterState.WALK;
   return true;

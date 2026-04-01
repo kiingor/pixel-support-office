@@ -15,7 +15,9 @@ export function isWalkable(
   return true;
 }
 
-/** BFS shortest path. Returns array of positions from start (exclusive) to end (inclusive). */
+/** BFS shortest path. Returns array of positions from start (exclusive) to end (inclusive).
+ *  Allows starting from blocked tiles (agent sitting at desk) and ending at blocked tiles (door near furniture).
+ */
 export function findPath(
   fromCol: number,
   fromRow: number,
@@ -30,8 +32,12 @@ export function findPath(
   const visited = new Set<string>();
   const parent = new Map<string, string>();
 
+  // Allow start and end positions even if they're on "blocked" tiles (desks/chairs)
+  const startKey = key(fromCol, fromRow);
+  const endKey = key(toCol, toRow);
+
   const queue: Position[] = [{ col: fromCol, row: fromRow }];
-  visited.add(key(fromCol, fromRow));
+  visited.add(startKey);
 
   const dirs = [
     { dc: 0, dr: -1 }, // up
@@ -46,8 +52,8 @@ export function findPath(
     if (current.col === toCol && current.row === toRow) {
       // Reconstruct path
       const path: Position[] = [];
-      let k = key(toCol, toRow);
-      while (k !== key(fromCol, fromRow)) {
+      let k = endKey;
+      while (k !== startKey) {
         const [c, r] = k.split(',').map(Number);
         path.unshift({ col: c, row: r });
         k = parent.get(k)!;
@@ -60,7 +66,11 @@ export function findPath(
       const nr = current.row + dr;
       const nk = key(nc, nr);
 
-      if (!visited.has(nk) && isWalkable(nc, nr, tiles, blockedTiles)) {
+      if (visited.has(nk)) continue;
+
+      // Allow the destination tile even if blocked (e.g., meeting room seat)
+      const walkable = isWalkable(nc, nr, tiles, blockedTiles) || nk === endKey;
+      if (walkable) {
         visited.add(nk);
         parent.set(nk, key(current.col, current.row));
         queue.push({ col: nc, row: nr });
