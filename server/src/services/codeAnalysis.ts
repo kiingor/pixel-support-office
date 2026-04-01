@@ -171,6 +171,27 @@ export function buildCodeContextForBug(bugDescription: string, maxTokens = 8000)
 
   // Search for relevant files
   const relevantFiles = new Set<string>();
+
+  // Always include key files if bug mentions specific areas
+  const descLower = bugDescription.toLowerCase();
+  if (descLower.includes('workdesk')) {
+    relevantFiles.add('app/workdesk/page.tsx');
+    relevantFiles.add('app/workdesk/layout.tsx');
+  }
+  if (descLower.includes('dashboard')) relevantFiles.add('app/dashboard/page.tsx');
+  if (descLower.includes('login')) relevantFiles.add('app/workdesk/login/page.tsx');
+  if (descLower.includes('supabase') || descLower.includes('realtime')) {
+    relevantFiles.add('lib/supabase/client.ts');
+    relevantFiles.add('lib/supabase/server.ts');
+  }
+  if (descLower.includes('ticket')) {
+    relevantFiles.add('lib/ticket-distribution.ts');
+    relevantFiles.add('lib/ticket-queue-processor.ts');
+  }
+  if (descLower.includes('whatsapp') || descLower.includes('webhook')) {
+    relevantFiles.add('app/api/whatsapp/webhook/route.ts');
+  }
+
   for (const keyword of keywords) {
     const results = searchCode(keyword, 5);
     for (const r of results) {
