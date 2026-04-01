@@ -1136,12 +1136,34 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
 
 // --- DEV AGENT ---
 
+// Rate limiter: max 5 DEV cases per hour
+const devCaseTimestamps: number[] = [];
+const DEV_CASE_LIMIT_PER_HOUR = 5;
+
 async function processDev(channelId: string, ticketId: string, qaReport: any, bugId: string, supportAgentId: string) {
+  // Rate limit: max 5 cases per hour
+  const now = Date.now();
+  const oneHourAgo = now - 60 * 60 * 1000;
+  // Remove timestamps older than 1 hour
+  while (devCaseTimestamps.length > 0 && devCaseTimestamps[0] < oneHourAgo) {
+    devCaseTimestamps.shift();
+  }
+  if (devCaseTimestamps.length >= DEV_CASE_LIMIT_PER_HOUR) {
+    const nextSlot = new Date(devCaseTimestamps[0] + 60 * 60 * 1000).toLocaleTimeString('pt-BR');
+    emitLog(`⏸️ Limite de ${DEV_CASE_LIMIT_PER_HOUR} casos/hora atingido. ${bugId} aguardando. Próximo slot: ${nextSlot}`);
+    io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: `Limite ${DEV_CASE_LIMIT_PER_HOUR}/hora atingido`, type: 'alert', duration: 5000 });
+    // Save the QA report for later but don't process now
+    dbLogAgentActivity(devAgentName, 'dev', 'Caso adiado', `${bugId} adiado: limite de ${DEV_CASE_LIMIT_PER_HOUR} casos/hora atingido`).catch(() => {});
+    freeAgent(supportAgentId);
+    return;
+  }
+  devCaseTimestamps.push(now);
+
   // Round-robin: pick next available DEV agent
   const currentDEV = getNextDEVAgent();
   devAgentName = currentDEV;
   const caseId = `CASE-${++caseCounter}`;
-  emitLog(`${currentDEV} gerando caso ${caseId}...`);
+  emitLog(`${currentDEV} gerando caso ${caseId}... (${devCaseTimestamps.length}/${DEV_CASE_LIMIT_PER_HOUR} casos nesta hora)`);
   io.emit('agent:working', { role: 'dev', agentName: currentDEV, action: `Criando ${caseId} (${bugId})` });
   dbLogAgentActivity(currentDEV, 'dev', 'Criando caso', `Gerando ${caseId} para ${bugId}`).catch(() => {});
   io.emit('agent:bubble', {
