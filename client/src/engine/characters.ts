@@ -216,11 +216,10 @@ export function sendCharacterTo(
   tiles: TileType[][],
   blockedTiles: Set<string>,
 ): boolean {
-  // Temporarily unblock the agent's seat area so they can leave the desk
-  // Agents sit ON furniture tiles, so we need to unblock their immediate area
+  // Temporarily unblock agent's desk area (desks are 3x2 blocks, agent sits inside)
   const unblocked: string[] = [];
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
       const key = `${ch.col + dx},${ch.row + dy}`;
       if (blockedTiles.has(key)) {
         blockedTiles.delete(key);

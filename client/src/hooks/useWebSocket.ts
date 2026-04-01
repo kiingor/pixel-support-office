@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useOfficeStore } from '../stores/officeStore';
-import { addBubble } from '../engine/characters';
+import { addBubble, sendCharacterTo } from '../engine/characters';
 import { SECTORS } from '../layout/sectorConfig';
 import { TILE_SIZE, CharacterState } from '../types/office';
 import type { SectorId, AgentRole } from '../types/agents';
@@ -212,22 +212,32 @@ export function useWebSocket() {
         }
         store.addLogEntry(`${agent.name} indo falar com ${data.targetAgentName}`);
       } else if (data.toSectorId === 'MEETING_ROOM') {
-        const success = os.sendAgentToMeetingRoom(agent.id);
+        let success = os.sendAgentToMeetingRoom(agent.id);
         if (!success) {
-          // Fallback: try sendAgentToSector instead
-          const sectorSuccess = os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
-          if (!sectorSuccess) {
-            console.warn(`[Walk] ${agent.name} pathfinding failed, teleporting to meeting room`);
-            // Spread agents across meeting room seats instead of all on the door
-            const seats = SECTORS.MEETING_ROOM.seatPositions;
-            const seatIdx = Math.floor(Math.random() * seats.length);
-            const seat = seats[seatIdx] || SECTORS.MEETING_ROOM.doorPosition;
-            agent.col = seat.col;
-            agent.row = seat.row;
-            agent.pixelX = seat.col * TILE_SIZE;
-            agent.pixelY = seat.row * TILE_SIZE;
-            agent.state = CharacterState.TALK;
+          // Fallback: try walking to sector door
+          success = os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
+        }
+        if (!success) {
+          // Last resort: walk to hallway first, then to meeting room after delay
+          const hallwayCol = Math.min(Math.max(agent.col, 1), 38);
+          success = sendCharacterTo(agent, hallwayCol, 10, os.tiles, os.blockedTiles);
+          if (success) {
+            console.log(`[Walk] ${agent.name} walking to hallway first`);
+            setTimeout(() => {
+              os.sendAgentToMeetingRoom(agent.id) || os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
+            }, 5000);
           }
+        }
+        if (!success) {
+          // Absolute last resort: teleport
+          console.warn(`[Walk] ${agent.name} all pathfinding failed, teleporting`);
+          const seats = SECTORS.MEETING_ROOM.seatPositions;
+          const seat = seats[Math.floor(Math.random() * seats.length)] || SECTORS.MEETING_ROOM.doorPosition;
+          agent.col = seat.col;
+          agent.row = seat.row;
+          agent.pixelX = seat.col * TILE_SIZE;
+          agent.pixelY = seat.row * TILE_SIZE;
+          agent.state = CharacterState.TALK;
         }
         store.addLogEntry(`${agent.name} indo para a reuniao`);
       } else {
