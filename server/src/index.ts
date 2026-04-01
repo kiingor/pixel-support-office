@@ -1597,31 +1597,42 @@ io.on('connection', (socket) => {
               socket.emit('chat:response_append', { agentId, response: `\n\n📋 **${targetAgent.name} respondeu:** ${targetResponse}` });
             }
           } else if (action.type === 'call_meeting' && agentRole === 'ceo') {
-            // CEO calls a meeting: all agents go to the meeting room
+            // CEO calls a meeting: all agents walk to meeting room, then start meeting
             const allAgents = getActiveAgentsList();
             const participants = allAgents.map(a => a.name);
+            const meetingTopic = action.topic || 'Reunião geral';
 
+            emitLog(`CEO convocou reunião: ${meetingTopic} — agentes se deslocando...`);
+
+            // Step 1: Send all agents walking to the meeting room
             for (const agent of allAgents) {
               io.emit('agent:walk_to', {
                 agentName: agent.name,
                 toSectorId: 'MEETING_ROOM',
                 message: 'Reunião!',
               });
+              io.emit('agent:bubble', {
+                agentName: agent.name,
+                role: agent.role,
+                text: '🏛️ Indo pra reunião',
+                type: 'handoff',
+                duration: 8000,
+              });
             }
 
-            const meetingTopic = action.topic || 'Reunião geral';
+            // Step 2: Wait 10 seconds for agents to arrive, THEN open meeting chat
+            setTimeout(() => {
+              activeMeeting.active = true;
+              activeMeeting.topic = meetingTopic;
+              activeMeeting.participants = participants;
+              activeMeeting.messages = [];
 
-            // Save meeting state on server
-            activeMeeting.active = true;
-            activeMeeting.topic = meetingTopic;
-            activeMeeting.participants = participants;
-            activeMeeting.messages = [];
-
-            io.emit('meeting:started', {
-              topic: meetingTopic,
-              participants,
-            });
-            emitLog(`CEO convocou reunião: ${meetingTopic}`);
+              io.emit('meeting:started', {
+                topic: meetingTopic,
+                participants,
+              });
+              emitLog(`Todos na sala de reunião — reunião iniciada`);
+            }, 10000);
           }
         }
       } catch (e) {

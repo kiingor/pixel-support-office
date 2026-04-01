@@ -173,7 +173,10 @@ export function useWebSocket() {
     socket.on('agent:walk_to', (data: { role?: string; agentName?: string; toSectorId: string; targetAgentName?: string; message?: string }) => {
       const store = useOfficeStore.getState();
       const os = store.officeState;
-      if (!os) return;
+      if (!os) {
+        console.warn('[Walk] No officeState');
+        return;
+      }
 
       // Find the agent by name first, then by role as fallback
       let agent = null;
@@ -193,7 +196,11 @@ export function useWebSocket() {
           }
         }
       }
-      if (!agent) return;
+      if (!agent) {
+        console.warn(`[Walk] Agent not found: name="${data.agentName}" role="${data.role}". Characters:`, Array.from(os.characters.values()).map(c => c.name));
+        return;
+      }
+      console.log(`[Walk] ${agent.name} → ${data.toSectorId}`);
 
       // If targeting a specific agent, walk to their position
       if (data.targetAgentName) {
