@@ -564,7 +564,7 @@ function renderSectorKPIs(
   renderKPIPanel(ctx, zoom, s, 17, 7, [
     { icon: '#4488ff', label: 'Tickets', value: stats.suporte.total },
     { icon: '#2ecc71', label: 'Resolvidos', value: stats.suporte.resolvidos },
-    { icon: '#e74c3c', label: 'Na fila', value: stats.suporte.fila },
+    { icon: '#e74c3c', label: 'Na fila', value: stats.suporte.fila || 0 },
     { icon: '#f39c12', label: 'Agentes', value: stats.suporte.agentes },
   ]);
 
@@ -596,7 +596,7 @@ function renderSectorKPIs(
     { icon: '#4488ff', label: 'Ativos', value: stats.ceo.agentesAtivos },
     { icon: '#2ecc71', label: 'Ocupados', value: stats.ceo.ocupados },
     { icon: '#95a5a6', label: 'Ociosos', value: stats.ceo.ociosos },
-    { icon: '#e74c3c', label: 'Fila', value: stats.ceo.fila },
+    { icon: '#e74c3c', label: 'Fila', value: stats.ceo.fila || 0 },
   ]);
 }
 

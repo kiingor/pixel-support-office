@@ -208,36 +208,27 @@ function updateIdleBehaviors(
   // This prevents agents from constantly leaving their chairs locally
 }
 
-/** Send a character walking to a specific position. */
+/** Send a character walking to a specific position.
+ *  Ignores furniture blockedTiles — agents walk freely over desks/chairs.
+ *  Only walls (TileType.WALL/VOID) block movement.
+ */
 export function sendCharacterTo(
   ch: Character,
   targetCol: number,
   targetRow: number,
   tiles: TileType[][],
-  blockedTiles: Set<string>,
+  _blockedTiles: Set<string>,
 ): boolean {
-  // Temporarily unblock agent's desk area (desks are 3x2 blocks, agent sits inside)
-  const unblocked: string[] = [];
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
-      const key = `${ch.col + dx},${ch.row + dy}`;
-      if (blockedTiles.has(key)) {
-        blockedTiles.delete(key);
-        unblocked.push(key);
-      }
-    }
+  // Use an EMPTY blocked set — furniture does not block agent movement
+  // Only walls and VOID tiles block (handled by isWalkable checking tile type)
+  const emptyBlocked = new Set<string>();
+
+  let path = findPath(ch.col, ch.row, targetCol, targetRow, tiles, emptyBlocked);
+  if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) {
+    path = findPathNear(ch.col, ch.row, targetCol, targetRow, tiles, emptyBlocked);
   }
 
-  let path = findPath(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
   if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) {
-    path = findPathNear(ch.col, ch.row, targetCol, targetRow, tiles, blockedTiles);
-  }
-
-  // Restore blocked tiles
-  for (const key of unblocked) blockedTiles.add(key);
-
-  if (path.length === 0 && (ch.col !== targetCol || ch.row !== targetRow)) {
-    console.warn(`[Path] ${ch.name} no path from (${ch.col},${ch.row}) to (${targetCol},${targetRow})`);
     return false;
   }
 
