@@ -581,7 +581,7 @@ export async function chatWithAgent(
     { role: 'user', content: userMessage },
   ];
 
-  // Try Gemini first
+  // Try Gemini Flash first
   try {
     const response = await gemini.chat.completions.create({
       model,
@@ -590,11 +590,24 @@ export async function chatWithAgent(
     });
     return response.choices[0]?.message?.content || 'Sem resposta.';
   } catch (error: any) {
-    const isRateLimit = error?.status === 429;
-    console.warn(`[OpenRouter] ${isRateLimit ? 'Rate limited' : 'Error'} — falling back to Claude`);
+    console.warn(`[AI] chatWithAgent Gemini ${model} failed: ${error?.message?.slice(0, 80)}`);
   }
 
-  // Fallback to Claude Haiku (cheap)
+  // Fallback 1: Try Gemini Lite (different model, may not be rate limited)
+  if (model !== GEMINI_LITE) {
+    try {
+      const response = await gemini.chat.completions.create({
+        model: GEMINI_LITE,
+        max_tokens: 1024,
+        messages,
+      });
+      return response.choices[0]?.message?.content || 'Sem resposta.';
+    } catch (error: any) {
+      console.warn(`[AI] chatWithAgent Gemini Lite also failed: ${error?.message?.slice(0, 80)}`);
+    }
+  }
+
+  // Fallback 2: Try Claude Haiku (only if credits available)
   try {
     const response = await client.messages.create({
       model: CHEAP_MODEL,
@@ -605,8 +618,8 @@ export async function chatWithAgent(
     });
     return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
   } catch (error) {
-    console.error('AI chatWithAgent fallback error:', error);
-    return 'Desculpe, estou com dificuldades técnicas no momento.';
+    console.error('AI chatWithAgent all models failed:', (error as Error).message?.slice(0, 100));
+    return 'Estou com todos os serviços de IA sobrecarregados. Tente novamente em alguns segundos.';
   }
 }
 
