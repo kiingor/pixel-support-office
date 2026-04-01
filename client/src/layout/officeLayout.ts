@@ -147,8 +147,8 @@ export const OFFICE_FURNITURE: PlacedFurniture[] = [
   { typeId: 'PLANT', col: 38, row: 23 },
   { typeId: 'SOFA_FRONT', col: 36, row: 21 },
 
-  // ============ HALLWAY DECOR ============
-  { typeId: 'PLANT_2', col: 5, row: 10 },
-  { typeId: 'PLANT_2', col: 15, row: 10 },
-  { typeId: 'PLANT_2', col: 30, row: 10 },
+  // ============ HALLWAY DECOR (plants on row 11 edges, NOT blocking pathways) ============
+  { typeId: 'PLANT_2', col: 1, row: 11 },
+  { typeId: 'PLANT_2', col: 10, row: 11 },
+  { typeId: 'PLANT_2', col: 20, row: 11 },
 ];
