@@ -212,32 +212,23 @@ export function useWebSocket() {
         }
         store.addLogEntry(`${agent.name} indo falar com ${data.targetAgentName}`);
       } else if (data.toSectorId === 'MEETING_ROOM') {
-        let success = os.sendAgentToMeetingRoom(agent.id);
-        if (!success) {
-          // Fallback: try walking to sector door
-          success = os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
-        }
-        if (!success) {
-          // Last resort: walk to hallway first, then to meeting room after delay
-          const hallwayCol = Math.min(Math.max(agent.col, 1), 38);
-          success = sendCharacterTo(agent, hallwayCol, 10, os.tiles, os.blockedTiles);
-          if (success) {
-            console.log(`[Walk] ${agent.name} walking to hallway first`);
-            setTimeout(() => {
-              os.sendAgentToMeetingRoom(agent.id) || os.sendAgentToSector(agent.id, 'MEETING_ROOM' as SectorId);
-            }, 5000);
+        // Walk to meeting room: try direct path to door, then to a seat
+        const meetingDoor = SECTORS.MEETING_ROOM.doorPosition;
+        const success = sendCharacterTo(agent, meetingDoor.col, meetingDoor.row, os.tiles, os.blockedTiles);
+        if (success) {
+          console.log(`[Walk] ${agent.name} walking to meeting room door`);
+        } else {
+          // Fallback: walk to hallway aligned with meeting room
+          const hallwaySuccess = sendCharacterTo(agent, meetingDoor.col, 11, os.tiles, os.blockedTiles);
+          if (hallwaySuccess) {
+            console.log(`[Walk] ${agent.name} walking to hallway near meeting room`);
+          } else {
+            console.warn(`[Walk] ${agent.name} pathfinding failed, teleporting to meeting room`);
+            agent.col = meetingDoor.col;
+            agent.row = meetingDoor.row;
+            agent.pixelX = meetingDoor.col * TILE_SIZE;
+            agent.pixelY = meetingDoor.row * TILE_SIZE;
           }
-        }
-        if (!success) {
-          // Absolute last resort: teleport
-          console.warn(`[Walk] ${agent.name} all pathfinding failed, teleporting`);
-          const seats = SECTORS.MEETING_ROOM.seatPositions;
-          const seat = seats[Math.floor(Math.random() * seats.length)] || SECTORS.MEETING_ROOM.doorPosition;
-          agent.col = seat.col;
-          agent.row = seat.row;
-          agent.pixelX = seat.col * TILE_SIZE;
-          agent.pixelY = seat.row * TILE_SIZE;
-          agent.state = CharacterState.TALK;
         }
         store.addLogEntry(`${agent.name} indo para a reuniao`);
       } else {
@@ -259,7 +250,17 @@ export function useWebSocket() {
       if (!os) return;
       for (const ch of os.characters.values()) {
         if (ch.name === data.agentName) {
-          os.returnAgentToSeat(ch.id);
+          // Try walking back to seat
+          const success = sendCharacterTo(ch, ch.seatCol, ch.seatRow, os.tiles, os.blockedTiles);
+          if (!success) {
+            // Teleport if pathfinding fails and sit down
+            ch.col = ch.seatCol;
+            ch.row = ch.seatRow;
+            ch.pixelX = ch.seatCol * TILE_SIZE;
+            ch.pixelY = ch.seatRow * TILE_SIZE;
+            ch.state = CharacterState.TYPE;
+          }
+          // If walking, state is already WALK — will become TYPE when arriving
           break;
         }
       }
