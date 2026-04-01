@@ -1022,6 +1022,13 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     metadata: qaReport as any,
   });
 
+  // Log the QA analysis as a conversation
+  dbLogAgentConversation(qaAgentName, 'qa', qaManagerName, 'qa_manager',
+    `Análise ${bugId}: ${qaReport.titulo || ''}. Gravidade: ${qaReport.gravidade}. Causa: ${(qaReport.causa_provavel || '').slice(0, 120)}. Arquivos: ${(qaReport.arquivos_investigar || []).join(', ')}`,
+    bugId).catch(() => {});
+  io.emit('agent:conversation', { from: qaAgentName, fromRole: 'qa', to: qaManagerName, toRole: 'qa_manager',
+    message: `${bugId} — ${qaReport.titulo || 'Análise'}: Gravidade ${qaReport.gravidade}. ${(qaReport.causa_provavel || '').slice(0, 80)}` });
+
   emitLog(`${qaAgentName}: Análise pronta — enviando para ${qaManagerName} revisar...`);
   io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Enviando análise para o gerente', type: 'handoff', duration: 5000 });
   dbLogAgentConversation(qaAgentName, 'qa', qaManagerName, 'qa_manager', `Análise do ${bugId} pronta para revisão`, bugId).catch(() => {});
@@ -1036,6 +1043,10 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
 
   const review = await reviewQA(qaManagerName, await buildPersonalizedPromptFull('qa_manager', qaManagerName), qaReport, bugId);
 
+  // Log the review conversation
+  dbLogAgentConversation(qaManagerName, 'qa_manager', qaAgentName, 'qa', review.aprovado ? `Análise aprovada: ${review.feedback.slice(0, 150)}` : `Análise REJEITADA: ${review.feedback.slice(0, 150)}`, bugId).catch(() => {});
+  io.emit('agent:conversation', { from: qaManagerName, fromRole: 'qa_manager', to: qaAgentName, toRole: 'qa', message: review.aprovado ? `Aprovado: ${review.feedback.slice(0, 100)}` : `Rejeitado: ${review.feedback.slice(0, 100)}` });
+
   if (!review.aprovado) {
     // Step 3a: Manager rejected — QA revises
     emitLog(`${qaManagerName}: Análise rejeitada — "${review.feedback.slice(0, 80)}"`);
@@ -1046,6 +1057,9 @@ async function processQA(channelId: string, ticketId: string, bugData: any, bugI
     const revisedPrompt = buildPersonalizedPrompt('qa', qaAgentName) +
       `\n\nFEEDBACK DO GERENTE QA (${qaManagerName}): ${review.feedback}\nRevise sua análise considerando este feedback antes de responder.`;
     qaReport = await analyzeQA(qaAgentName, revisedPrompt, JSON.stringify(bugData), bugId);
+
+    dbLogAgentConversation(qaAgentName, 'qa', qaManagerName, 'qa_manager', `Análise revisada: ${qaReport.titulo || ''}. Gravidade: ${qaReport.gravidade}`, bugId).catch(() => {});
+    io.emit('agent:conversation', { from: qaAgentName, fromRole: 'qa', to: qaManagerName, toRole: 'qa_manager', message: `Análise revisada: ${(qaReport.titulo || '').slice(0, 80)}` });
 
     emitLog(`${qaAgentName}: Análise revisada e enviada novamente`);
     io.emit('agent:bubble', { agentName: qaAgentName, role: 'qa', text: 'Reenviando para gerente', type: 'handoff', duration: 4000 });
@@ -1152,6 +1166,10 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
 
   const leadReview = await reviewDevCase(devLeadName, await buildPersonalizedPromptFull('dev_lead', devLeadName), devCase, caseId);
 
+  // Log the review conversation
+  dbLogAgentConversation(devLeadName, 'dev_lead', devAgentName, 'dev', leadReview.aprovado ? `Caso ${caseId} aprovado: ${leadReview.feedback.slice(0, 150)}` : `Caso ${caseId} REJEITADO: ${leadReview.feedback.slice(0, 150)}`, caseId).catch(() => {});
+  io.emit('agent:conversation', { from: devLeadName, fromRole: 'dev_lead', to: devAgentName, toRole: 'dev', message: leadReview.aprovado ? `Aprovado: ${leadReview.feedback.slice(0, 100)}` : `Rejeitado: ${leadReview.feedback.slice(0, 100)}` });
+
   if (!leadReview.aprovado) {
     // Step 3a: Lead rejected — Dev revises
     emitLog(`${devLeadName}: Caso rejeitado — "${leadReview.feedback.slice(0, 80)}"`);
@@ -1162,6 +1180,9 @@ async function processDev(channelId: string, ticketId: string, qaReport: any, bu
     const revisedDevPrompt = buildPersonalizedPrompt('dev', devAgentName) +
       `\n\nFEEDBACK DO DEV LEAD (${devLeadName}): ${leadReview.feedback}\nRevise o caso considerando este feedback. Riscos apontados: ${(leadReview.riscos_adicionais || []).join(', ')}`;
     devCase = await generateDevCase(devAgentName, revisedDevPrompt, qaReport, caseId);
+
+    dbLogAgentConversation(devAgentName, 'dev', devLeadName, 'dev_lead', `Caso ${caseId} revisado: ${(devCase.titulo || '').slice(0, 100)}`, caseId).catch(() => {});
+    io.emit('agent:conversation', { from: devAgentName, fromRole: 'dev', to: devLeadName, toRole: 'dev_lead', message: `Caso ${caseId} revisado e reenviado` });
 
     emitLog(`${devAgentName}: Caso revisado e enviado novamente`);
     io.emit('agent:bubble', { agentName: devAgentName, role: 'dev', text: 'Reenviando para Tech Lead', type: 'handoff', duration: 4000 });
