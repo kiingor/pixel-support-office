@@ -130,17 +130,25 @@ export class OfficeState {
 
     addBubble(ch, 'Tchau!', 'alert', 2);
 
-    // Walk to door then remove
+    // Try to walk to door then remove, but if pathfinding fails, remove immediately
     const sector = SECTORS[ch.sectorId];
     const door = sector.doorPosition;
-    sendCharacterTo(ch, door.col, door.row, this.tiles, this.blockedTiles);
+    const canWalk = sendCharacterTo(ch, door.col, door.row, this.tiles, this.blockedTiles);
 
-    this.pendingArrivals.set(ch.id, {
-      targetSeat: '',
-      callback: () => {
+    if (canWalk) {
+      // Walk to door, then remove when arrived
+      this.pendingArrivals.set(ch.id, {
+        targetSeat: '',
+        callback: () => {
+          this.characters.delete(id);
+        },
+      });
+    } else {
+      // Can't walk — remove after a brief delay (to show the "Tchau!" bubble)
+      setTimeout(() => {
         this.characters.delete(id);
-      },
-    });
+      }, 1500);
+    }
 
     this.emit({ type: 'agent_fired', agentId: id });
     return true;
