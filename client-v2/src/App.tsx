@@ -266,8 +266,6 @@ function App() {
     );
   }
 
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
-
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
     {/* Main canvas area */}
