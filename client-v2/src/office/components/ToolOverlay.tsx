@@ -173,23 +173,13 @@ export function ToolOverlay({
                 />
               )}
               <div style={{ overflow: 'hidden' }}>
-                <span
-                  style={{
-                    fontSize: isSub ? '20px' : '22px',
-                    fontStyle: isSub ? 'italic' : undefined,
-                    color: 'var(--pixel-text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    display: 'block',
-                  }}
-                >
-                  {activityText}
-                </span>
                 {ch.folderName && (
                   <span
                     style={{
-                      fontSize: '16px',
-                      color: 'var(--pixel-text-dim)',
+                      fontSize: isSub ? '20px' : '22px',
+                      fontStyle: isSub ? 'italic' : undefined,
+                      fontWeight: 600,
+                      color: '#ffffff',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       display: 'block',
@@ -198,6 +188,19 @@ export function ToolOverlay({
                     {ch.folderName}
                   </span>
                 )}
+                <span
+                  style={{
+                    fontSize: '16px',
+                    color: 'var(--pixel-text-dim)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: 'block',
+                  }}
+                >
+                  {(ch as any).roleLabel
+                    ? `${(ch as any).roleLabel} - ${activityText}`
+                    : activityText}
+                </span>
               </div>
               {isSelected && !isSub && (
                 <button

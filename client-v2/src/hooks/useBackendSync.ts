@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { OfficeState } from '../office/engine/officeState.js';
-import type { Character } from '../office/types.js';
+import type { Character, Seat } from '../office/types.js';
 import type { AgentRole } from './useWebSocket.js';
 
 // ── Server URL (same as useWebSocket) ────────────────────────────────
@@ -36,6 +36,45 @@ export interface BackendCharacter extends Character {
   backendId: string;
   backendName: string;
   backendRole: AgentRole;
+  roleLabel: string;
+}
+
+// ── Role display labels ─────────────────────────────────────────────
+const ROLE_LABELS: Record<AgentRole, string> = {
+  ceo: 'CEO',
+  suporte: 'Suporte',
+  qa: 'QA',
+  qa_manager: 'Gerente QA',
+  dev: 'DEV',
+  dev_lead: 'Tech Lead',
+  log_analyzer: 'Log Analyzer',
+};
+
+// ── Role-to-seat-prefix mapping ─────────────────────────────────────
+// Chair UIDs in the layout JSON use sector prefixes (e.g. "sup_chair_1").
+// We map each role to the prefix of its sector's chairs so agents get
+// assigned to seats in the correct room.
+const ROLE_SEAT_PREFIX: Record<AgentRole, string> = {
+  ceo: 'ceo_chair_',
+  suporte: 'sup_chair_',
+  qa: 'qa_chair_',
+  qa_manager: 'qa_chair_',
+  dev: 'dev_chair_',
+  dev_lead: 'dev_chair_',
+  log_analyzer: 'log_chair_',
+};
+
+/** Find a free seat in the given sector (by UID prefix), or null. */
+function findFreeSeatInSector(
+  seats: Map<string, Seat>,
+  prefix: string,
+): string | null {
+  for (const [uid, seat] of seats) {
+    if (!seat.assigned && uid.startsWith(prefix)) {
+      return uid;
+    }
+  }
+  return null;
 }
 
 // Track numeric IDs we assign to backend agents (pixel-agents uses numbers)
@@ -93,9 +132,16 @@ export function useBackendSync(
           ch.backendName = agent.name;
           ch.backendRole = role;
           ch.folderName = displayName;
+          ch.roleLabel = ROLE_LABELS[role] || role;
         } else {
-          // Create new character (pass displayName as folderName for label)
-          os.addAgent(numId, palette, undefined, undefined, undefined, displayName);
+          // Find a seat in the agent's sector
+          const seatPrefix = ROLE_SEAT_PREFIX[role] || '';
+          const preferredSeat = seatPrefix
+            ? findFreeSeatInSector(os.seats, seatPrefix)
+            : undefined;
+
+          // Create new character with preferred seat in their sector
+          os.addAgent(numId, palette, undefined, preferredSeat ?? undefined, undefined, displayName);
 
           // Augment with backend metadata
           const ch = os.characters.get(numId) as BackendCharacter | undefined;
@@ -103,6 +149,7 @@ export function useBackendSync(
             ch.backendId = agent.id;
             ch.backendName = agent.name;
             ch.backendRole = role;
+            ch.roleLabel = ROLE_LABELS[role] || role;
           }
         }
       }
@@ -183,7 +230,14 @@ export function useBackendSync(
       const displayName = LEADER_ROLES.has(role)
         ? `\u2605 ${role}`
         : role;
-      os.addAgent(numId, palette, undefined, undefined, undefined, displayName);
+
+      // Find a seat in the agent's sector
+      const seatPrefix = ROLE_SEAT_PREFIX[role] || '';
+      const preferredSeat = seatPrefix
+        ? findFreeSeatInSector(os.seats, seatPrefix)
+        : undefined;
+
+      os.addAgent(numId, palette, undefined, preferredSeat ?? undefined, undefined, displayName);
       const ch = os.characters.get(numId) as BackendCharacter | undefined;
       if (ch) {
         ch.backendId = tempId;

@@ -142,10 +142,10 @@ export function ControlPanel() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>{agent.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>{agent.name}</span>
                         <span
                           onClick={e => { e.stopPropagation(); setRenamingId(agent.id); setRenameValue(agent.name); }}
-                          style={{ fontSize: 10, color: '#445', cursor: 'pointer', padding: '0 3px' }}
+                          style={{ fontSize: 10, color: '#8899aa', cursor: 'pointer', padding: '0 3px' }}
                           title="Renomear"
                         >&#9998;</span>
                       </div>
@@ -157,7 +157,7 @@ export function ControlPanel() {
                       }
                     </div>
                   </div>
-                  {renamingId !== agent.id && <span style={{ fontSize: 12, color: '#334' }}>{'>'}</span>}
+                  {renamingId !== agent.id && <span style={{ fontSize: 12, color: '#8899aa' }}>{'>'}</span>}
                 </div>
               </div>
             ))}
@@ -168,7 +168,7 @@ export function ControlPanel() {
         {activeTab === 'Fila' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>Fila de Atendimento</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>Fila de Atendimento</span>
               {queueSize > 0 && <span className="badge badge-open">{queueSize} aguardando</span>}
             </div>
             {tickets.length === 0 && <div className="text-muted">Nenhum ticket na fila</div>}
@@ -177,7 +177,7 @@ export function ControlPanel() {
               return (
                 <div key={t.id} className="panel-card" style={{ cursor: 'default' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 12 }}>{t.discordAuthor || 'Demo User'}</span>
+                    <span style={{ fontWeight: 600, fontSize: 12, color: '#e0e0e0' }}>{t.discordAuthor || 'Demo User'}</span>
                     <span className={`badge ${statusClass}`}>{t.status}</span>
                   </div>
                   <div style={{ color: '#6a8aaa', marginTop: 3, fontSize: 11 }}>
@@ -289,7 +289,7 @@ export function ControlPanel() {
         {/* === CHAT (Agent Conversations) === */}
         {activeTab === 'Chat' && (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Conversas entre Agentes</div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: '#e0e0e0' }}>Conversas entre Agentes</div>
             {agentConversations.length === 0 && (
               <div className="text-muted">Nenhuma conversa registrada ainda</div>
             )}
@@ -298,12 +298,12 @@ export function ControlPanel() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                   <span style={{ fontSize: 11 }}>
                     <span style={{ fontWeight: 700, color: '#4488ff' }}>{conv.from}</span>
-                    <span style={{ color: '#555' }}> ({conv.fromRole})</span>
-                    <span style={{ color: '#888' }}> → </span>
+                    <span style={{ color: '#7a8a9a' }}> ({conv.fromRole})</span>
+                    <span style={{ color: '#9aaa' }}> → </span>
                     <span style={{ fontWeight: 700, color: '#2ecc71' }}>{conv.to}</span>
-                    <span style={{ color: '#555' }}> ({conv.toRole})</span>
+                    <span style={{ color: '#7a8a9a' }}> ({conv.toRole})</span>
                   </span>
-                  <span style={{ fontSize: 9, color: '#555' }}>{conv.time}</span>
+                  <span style={{ fontSize: 9, color: '#7a8a9a' }}>{conv.time}</span>
                 </div>
                 <div style={{ fontSize: 11, color: '#aaa' }}>{conv.message}</div>
               </div>

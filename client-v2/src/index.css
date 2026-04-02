@@ -120,8 +120,8 @@ body,
 .btn-icon { background: none; border: none; color: #888; font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
 .btn-icon:hover { color: #e74c3c; background: #ffffff11; }
 
-.text-muted { color: #666; font-size: 12px; }
-.section-title { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: 700; }
+.text-muted { color: #8899aa; font-size: 12px; }
+.section-title { font-size: 12px; color: #99aabb; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: 700; }
 
 /* === Modal === */
 .modal-overlay {

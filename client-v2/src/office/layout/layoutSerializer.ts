@@ -307,6 +307,30 @@ function migrateFurnitureTypes(furniture: PlacedFurniture[]): PlacedFurniture[] 
   return migrated;
 }
 
+/** Ensure every furniture item has a uid. Items without a uid get one
+ *  generated from their type and position so seat assignment works. */
+function ensureFurnitureUids(furniture: PlacedFurniture[]): PlacedFurniture[] {
+  const usedUids = new Set<string>();
+  const result: PlacedFurniture[] = [];
+  for (const item of furniture) {
+    if (item.uid) {
+      usedUids.add(item.uid);
+      result.push(item);
+    } else {
+      // Generate a deterministic uid from type + position
+      let candidate = `${item.type}_${item.col}_${item.row}`;
+      let suffix = 0;
+      while (usedUids.has(candidate)) {
+        suffix++;
+        candidate = `${item.type}_${item.col}_${item.row}_${suffix}`;
+      }
+      usedUids.add(candidate);
+      result.push({ ...item, uid: candidate });
+    }
+  }
+  return result;
+}
+
 /** Deserialize layout from JSON string, migrating old tile types if needed */
 export function deserializeLayout(json: string): OfficeLayout | null {
   try {
@@ -333,8 +357,8 @@ export function migrateLayoutColors(layout: OfficeLayout): OfficeLayout {
  * to the new pattern-based system. Also migrates old furniture type strings and old VOID value.
  */
 function migrateLayout(layout: OfficeLayout): OfficeLayout {
-  // Migrate furniture types
-  layout = { ...layout, furniture: migrateFurnitureTypes(layout.furniture) };
+  // Migrate furniture types and ensure all items have UIDs
+  layout = { ...layout, furniture: ensureFurnitureUids(migrateFurnitureTypes(layout.furniture)) };
 
   // Migrate old VOID value (was 8, now 255) — only for legacy layouts since FLOOR_8 reuses value 8
   const OLD_VOID = 8;
