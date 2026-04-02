@@ -23,6 +23,7 @@ import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { EditTool } from './office/types.js';
 import { isBrowserRuntime } from './runtime.js';
+import { useOfficeStore } from './stores/officeStore.js';
 import { vscode } from './vscodeApi.js';
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -232,6 +233,14 @@ function App() {
     const meta = os.subagentMeta.get(agentId);
     const focusId = meta ? meta.parentAgentId : agentId;
     vscode.postMessage({ type: 'focusAgent', id: focusId });
+
+    // Open chat sidebar for the clicked agent (if it has a backendId)
+    const ch = os.characters.get(agentId) as any;
+    if (ch?.backendId) {
+      useOfficeStore.getState().selectAgent(ch.backendId);
+      useOfficeStore.getState().openChat(ch.backendId);
+      setPanelCollapsed(false);
+    }
   }, []);
 
   const officeState = getOfficeState();

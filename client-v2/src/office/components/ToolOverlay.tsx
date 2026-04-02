@@ -92,8 +92,8 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
-        // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        // Name label is ALWAYS visible; activity detail shows on hover/select/always-show
+        const showActivityDetail = alwaysShowOverlay || isSelected || isHovered;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -140,7 +140,7 @@ export function ToolOverlay({
               flexDirection: 'column',
               alignItems: 'center',
               pointerEvents: isSelected ? 'auto' : 'none',
-              opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
+              opacity: !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
               zIndex: isSelected ? 'var(--pixel-overlay-selected-z)' : 'var(--pixel-overlay-z)',
             }}
           >
@@ -188,19 +188,21 @@ export function ToolOverlay({
                     {ch.folderName}
                   </span>
                 )}
-                <span
-                  style={{
-                    fontSize: '16px',
-                    color: 'var(--pixel-text-dim)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    display: 'block',
-                  }}
-                >
-                  {(ch as any).roleLabel
-                    ? `${(ch as any).roleLabel} - ${activityText}`
-                    : activityText}
-                </span>
+                {showActivityDetail && (
+                  <span
+                    style={{
+                      fontSize: '16px',
+                      color: 'var(--pixel-text-dim)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: 'block',
+                    }}
+                  >
+                    {(ch as any).roleLabel
+                      ? `${(ch as any).roleLabel} - ${activityText}`
+                      : activityText}
+                  </span>
+                )}
               </div>
               {isSelected && !isSub && (
                 <button
