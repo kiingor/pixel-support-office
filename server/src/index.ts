@@ -705,6 +705,31 @@ app.get('/api/agent-conversations', async (_, res) => {
   res.json({ conversations });
 });
 
+// Save/load office layout
+const LAYOUT_FILE = join(__dirname, '..', '..', 'data', 'office-layout.json');
+
+app.get('/api/layout', (_req, res) => {
+  try {
+    if (existsSync(LAYOUT_FILE)) {
+      const data = readFileSync(LAYOUT_FILE, 'utf-8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json(null);
+    }
+  } catch { res.json(null); }
+});
+
+app.post('/api/layout', (req, res) => {
+  try {
+    const layout = req.body;
+    if (!layout || !layout.tiles) return res.status(400).json({ error: 'Invalid layout' });
+    const dir = join(__dirname, '..', '..', 'data');
+    if (!existsSync(dir)) { mkdirSync(dir, { recursive: true }); }
+    writeFileSync(LAYOUT_FILE, JSON.stringify(layout), 'utf-8');
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
 app.get('/api/logs', async (_, res) => {
   const logs = await dbGetRecentLogs(50);
   res.json(logs);
@@ -1803,7 +1828,7 @@ function emitLog(message: string) {
 
 // --- Serve frontend static files ---
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

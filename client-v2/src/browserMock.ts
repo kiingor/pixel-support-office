@@ -225,9 +225,20 @@ export async function initBrowserMock(): Promise<void> {
         decodeFurnitureFromPng(base, catalog),
       ]);
 
-  const layout = assetIndex.defaultLayout
-    ? await fetch(`${base}assets/${assetIndex.defaultLayout}`).then((r) => r.json())
-    : null;
+  // Try loading saved layout from server first, fallback to default
+  const serverUrl = import.meta.env.VITE_SERVER_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '');
+  let layout = null;
+  try {
+    const savedLayout = await fetch(`${serverUrl}/api/layout`).then(r => r.json());
+    if (savedLayout && savedLayout.tiles) {
+      layout = savedLayout;
+      console.log('[BrowserMock] Loaded saved layout from server');
+    }
+  } catch { /* no saved layout */ }
+  if (!layout && assetIndex.defaultLayout) {
+    layout = await fetch(`${base}assets/${assetIndex.defaultLayout}`).then((r) => r.json());
+    console.log('[BrowserMock] Using default layout');
+  }
 
   mockPayload = {
     characters,

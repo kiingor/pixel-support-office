@@ -84,6 +84,13 @@ export function useEditorActions(
   const saveLayout = useCallback((layout: OfficeLayout) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
+      // Save to server API instead of VS Code
+      const serverUrl = import.meta.env.VITE_SERVER_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '');
+      fetch(`${serverUrl}/api/layout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(layout),
+      }).catch(e => console.warn('[Layout] Save failed:', e));
       vscode.postMessage({ type: 'saveLayout', layout });
     }, LAYOUT_SAVE_DEBOUNCE_MS);
   }, []);
