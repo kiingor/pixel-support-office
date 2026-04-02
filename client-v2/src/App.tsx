@@ -13,7 +13,9 @@ import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useBackendSync } from './hooks/useBackendSync.js';
+import { useServerConnection } from './hooks/useServerConnection.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
+import { SectorLabels } from './office/components/SectorLabels.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
@@ -161,17 +163,10 @@ function App() {
     alwaysShowLabels,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
-  // ── Backend agent sync (fetch agents from server and create pixel-agents characters) ──
-  const socketRef = useRef<import('socket.io-client').Socket | null>(null);
-  useEffect(() => {
-    import('socket.io-client').then(({ io }) => {
-      const serverUrl = import.meta.env.VITE_SERVER_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '');
-      const socket = io(serverUrl, { transports: ['polling'], reconnection: true });
-      socketRef.current = socket;
-      socket.on('connect', () => console.log('[Backend] Connected'));
-      return () => { socket.disconnect(); };
-    });
-  }, []);
+  // ── Server connection: wires all WS events into zustand officeStore ──
+  const socketRef = useServerConnection(getOfficeState);
+
+  // ── Backend agent sync (creates pixel-agents characters from server agents) ──
   useBackendSync(getOfficeState, socketRef);
 
   // Show migration notice once layout reset is detected
@@ -427,6 +422,15 @@ function App() {
         />
       )}
 
+      {!isDebugMode && (
+        <SectorLabels
+          officeState={officeState}
+          containerRef={containerRef}
+          zoom={editor.zoom}
+          panRef={editor.panRef}
+        />
+      )}
+
       {isDebugMode && (
         <DebugView
           agents={agents}
@@ -507,7 +511,7 @@ function App() {
       onClick={() => setPanelCollapsed(prev => !prev)}
       style={{
         position: 'absolute',
-        right: panelCollapsed ? 0 : 320,
+        right: panelCollapsed ? 0 : 380,
         top: 8,
         zIndex: 60,
         background: 'var(--pixel-btn-bg, #1e1e2e)',
@@ -528,7 +532,7 @@ function App() {
     {!panelCollapsed && (
       <div
         style={{
-          width: 320,
+          width: 380,
           height: '100%',
           overflow: 'hidden',
           flexShrink: 0,

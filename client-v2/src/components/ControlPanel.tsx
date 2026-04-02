@@ -27,6 +27,7 @@ export function ControlPanel() {
     agents, selectedAgentId, selectAgent, openChat,
     logEntries, tickets, cases, chatAgentId, resolveCase, deleteCase,
     queueSize, meetingActive, openCaseDetail, renameAgent, agentConversations,
+    agentWorkStatuses,
   } = useOfficeStore();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -150,8 +151,8 @@ export function ControlPanel() {
                       </div>
                     )}
                     <div style={{ fontSize: 10, color: '#5a7a9a' }}>
-                      {ROLE_LABELS[agent.role]} - {agent.workStatus
-                        ? <span style={{ color: '#2ecc71', fontWeight: 600 }}>{agent.workStatus}</span>
+                      {ROLE_LABELS[agent.role]} - {agentWorkStatuses.get(agent.name)
+                        ? <span style={{ color: '#2ecc71', fontWeight: 600 }}>{agentWorkStatuses.get(agent.name)}</span>
                         : <span style={{ color: '#666' }}>Ocioso</span>
                       }
                     </div>

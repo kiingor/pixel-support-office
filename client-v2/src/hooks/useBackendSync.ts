@@ -81,14 +81,21 @@ export function useBackendSync(
         const role = (agent.type || 'suporte') as AgentRole;
         const palette = ROLE_PALETTE[role] ?? 1;
 
+        // Build display label: add star for leaders
+        const LEADER_ROLES = new Set<AgentRole>(['qa_manager', 'dev_lead', 'ceo']);
+        const displayName = LEADER_ROLES.has(role)
+          ? `\u2605 ${agent.name}`
+          : agent.name;
+
         if (os.characters.has(numId)) {
           // Already exists -- update metadata only
           const ch = os.characters.get(numId)! as BackendCharacter;
           ch.backendName = agent.name;
           ch.backendRole = role;
+          ch.folderName = displayName;
         } else {
-          // Create new character
-          os.addAgent(numId, palette);
+          // Create new character (pass displayName as folderName for label)
+          os.addAgent(numId, palette, undefined, undefined, undefined, displayName);
 
           // Augment with backend metadata
           const ch = os.characters.get(numId) as BackendCharacter | undefined;
@@ -172,7 +179,11 @@ export function useBackendSync(
       const numId = getNumericId(tempId);
       const palette = ROLE_PALETTE[role] ?? 1;
 
-      os.addAgent(numId, palette);
+      const LEADER_ROLES = new Set<AgentRole>(['qa_manager', 'dev_lead', 'ceo']);
+      const displayName = LEADER_ROLES.has(role)
+        ? `\u2605 ${role}`
+        : role;
+      os.addAgent(numId, palette, undefined, undefined, undefined, displayName);
       const ch = os.characters.get(numId) as BackendCharacter | undefined;
       if (ch) {
         ch.backendId = tempId;
