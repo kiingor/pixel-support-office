@@ -13,6 +13,7 @@ import { PULSE_ANIMATION_DURATION_SEC } from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
+import { useBackendSync } from './hooks/useBackendSync.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -160,6 +161,19 @@ function App() {
     setWatchAllSessions,
     alwaysShowLabels,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+
+  // ── Backend agent sync (fetch agents from server and create pixel-agents characters) ──
+  const socketRef = useRef<import('socket.io-client').Socket | null>(null);
+  useEffect(() => {
+    import('socket.io-client').then(({ io }) => {
+      const serverUrl = import.meta.env.VITE_SERVER_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '');
+      const socket = io(serverUrl, { transports: ['polling'], reconnection: true });
+      socketRef.current = socket;
+      socket.on('connect', () => console.log('[Backend] Connected'));
+      return () => { socket.disconnect(); };
+    });
+  }, []);
+  useBackendSync(getOfficeState, socketRef);
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
