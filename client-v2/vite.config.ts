@@ -4,13 +4,13 @@ import * as path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
 
-import { buildAssetIndex, buildFurnitureCatalog } from 'D:/Nexus Agents/shared/assets/build.ts';
+import { buildAssetIndex, buildFurnitureCatalog } from '../shared/assets/build.ts';
 import {
   decodeAllCharacters,
   decodeAllFloors,
   decodeAllFurniture,
   decodeAllWalls,
-} from 'D:/Nexus Agents/shared/assets/loader.ts';
+} from '../shared/assets/loader.ts';
 
 // ── Decoded asset cache (invalidated on file change) ─────────────────────────
 

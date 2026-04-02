@@ -1803,10 +1803,14 @@ function emitLog(message: string) {
 
 // --- Serve frontend static files ---
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const clientDist = join(__dirname, '..', '..', 'client', 'dist');
+// Try client-v2 first, fallback to client
+const clientV2Dist = join(__dirname, '..', '..', 'client-v2', 'dist');
+const clientV1Dist = join(__dirname, '..', '..', 'client', 'dist');
+const clientDist = existsSync(clientV2Dist + '/index.html') ? clientV2Dist : clientV1Dist;
 app.use(express.static(clientDist, { maxAge: 0, etag: false }));
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

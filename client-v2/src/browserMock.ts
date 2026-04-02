@@ -19,12 +19,12 @@ import {
   WALL_GRID_COLS,
   WALL_PIECE_HEIGHT,
   WALL_PIECE_WIDTH,
-} from 'D:/Nexus Agents/shared/assets/constants.ts';
+} from '../../shared/assets/constants.ts';
 import type {
   AssetIndex,
   CatalogEntry,
   CharacterDirectionSprites,
-} from 'D:/Nexus Agents/shared/assets/types.ts';
+} from '../../shared/assets/types.ts';
 
 interface MockPayload {
   characters: CharacterDirectionSprites[];
