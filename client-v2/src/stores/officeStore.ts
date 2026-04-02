@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { AgentRole } from '../types/agents';
 import type { AgentProfile } from '../types/agentProfile';
 import { DEFAULT_PROMPTS, DEFAULT_PERSONALITIES, DEFAULT_SPECIALIZATIONS, generateAgentPersonality, parsePersonalityBehavior } from '../types/agentProfile';
-import type { OfficeState } from '../office/engine/officeState';
 import type { Socket } from 'socket.io-client';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
@@ -14,7 +13,7 @@ interface AgentInfo {
   name: string;
   role: AgentRole;
   status: string;
-  workStatus?: string; // What the agent is currently doing (from server)
+  workStatus?: string;
 }
 
 interface TicketInfo {
@@ -49,13 +48,6 @@ interface ChatMessage {
   timestamp: number;
 }
 
-interface ContextMenu {
-  x: number;
-  y: number;
-  furnitureId: string;
-  onDelete: () => void;
-}
-
 interface ActiveConversation {
   agentName: string;
   userName: string;
@@ -73,7 +65,6 @@ interface MeetingMessage {
 }
 
 interface OfficeStoreState {
-  officeState: OfficeState | null;
   socket: Socket | null;
   selectedAgentId: string | null;
   agents: AgentInfo[];
@@ -83,15 +74,11 @@ interface OfficeStoreState {
   chatAgentId: string | null;
   chatHistories: Map<string, ChatMessage[]>;
   agentProfiles: Map<string, AgentProfile>;
-  contextMenu: ContextMenu | null;
   chatLoading: boolean;
   queueSize: number;
   activeConversations: Map<string, ActiveConversation>;
-  // Agent conversations (inter-agent communication)
   agentConversations: Array<{ from: string; fromRole: string; to: string; toRole: string; message: string; time: string }>;
   addAgentConversation: (conv: { from: string; fromRole: string; to: string; toRole: string; message: string }) => void;
-
-  // Agent work status (what each agent is doing right now)
   agentWorkStatuses: Map<string, string>;
   setAgentWorkStatus: (agentName: string, status: string) => void;
   clearAgentWorkStatus: (agentName: string) => void;
@@ -103,10 +90,9 @@ interface OfficeStoreState {
   meetingMessages: MeetingMessage[];
   meetingLoading: boolean;
 
-  setOfficeState: (os: OfficeState) => void;
   setSocket: (s: Socket) => void;
   selectAgent: (id: string | null) => void;
-  syncAgents: () => void;
+  setAgents: (agents: AgentInfo[]) => void;
   addLogEntry: (message: string) => void;
   addTicket: (ticket: TicketInfo) => void;
   updateTicket: (id: string, updates: Partial<TicketInfo>) => void;
@@ -128,7 +114,6 @@ interface OfficeStoreState {
   openCaseDetail: (casoId: string) => void;
   closeCaseDetail: () => void;
   getAgentProfile: (agentId: string) => AgentProfile | undefined;
-  setContextMenu: (menu: ContextMenu | null) => void;
   setQueueSize: (size: number) => void;
   updateActiveConversation: (channelId: string, data: ActiveConversation) => void;
   startMeeting: (topic: string, participants: string[]) => void;
@@ -140,16 +125,7 @@ interface OfficeStoreState {
 
 let msgCounter = 0;
 
-/** Sync sector stats to OfficeState for rendering KPIs */
-function syncSectorStats(stateGetter: () => OfficeStoreState): void {
-  const s = stateGetter();
-  if (s.officeState) {
-    (s.officeState as any).updateStats?.(s.tickets, s.cases, s.queueSize);
-  }
-}
-
 export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
-  officeState: null,
   socket: null,
   selectedAgentId: null,
   agents: [],
@@ -161,7 +137,6 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   chatAgentId: null,
   chatHistories: new Map(),
   agentProfiles: new Map(),
-  contextMenu: null,
   chatLoading: false,
   queueSize: 0,
   activeConversations: new Map(),
@@ -177,16 +152,11 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     const m = new Map(get().agentWorkStatuses);
     m.set(agentName, status);
     set({ agentWorkStatuses: m });
-    // Also update OfficeState for renderer aura
-    const os = get().officeState;
-    if (os) (os as any).workingAgents?.add(agentName);
   },
   clearAgentWorkStatus: (agentName) => {
     const m = new Map(get().agentWorkStatuses);
     m.delete(agentName);
     set({ agentWorkStatuses: m });
-    const os = get().officeState;
-    if (os) (os as any).workingAgents?.delete(agentName);
   },
   meetingActive: false,
   meetingTopic: '',
@@ -194,33 +164,27 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   meetingMessages: [],
   meetingLoading: false,
 
-  setOfficeState: (os) => set({ officeState: os }),
   setSocket: (s) => set({ socket: s }),
   selectAgent: (id) => set({ selectedAgentId: id }),
 
-  syncAgents: () => {
-    const os = get().officeState;
-    if (!os) return;
-    const agents: AgentInfo[] = [];
-    const profiles = get().agentProfiles;
-    for (const ch of (os as any).characters.values()) {
-      const workStatus = get().agentWorkStatuses.get(ch.name);
-      agents.push({ id: ch.id, name: ch.name, role: ch.role, status: ch.state, workStatus });
-      if (!profiles.has(ch.id)) {
-        profiles.set(ch.id, {
-          id: ch.id,
-          name: ch.name,
-          role: ch.role,
-          systemPrompt: DEFAULT_PROMPTS[ch.role].replace('{AGENT_NAME}', ch.name),
-          personality: DEFAULT_PERSONALITIES[ch.role],
-          specialization: DEFAULT_SPECIALIZATIONS[ch.role],
+  setAgents: (agents) => {
+    // Ensure profiles exist for every agent
+    const profiles = new Map(get().agentProfiles);
+    for (const a of agents) {
+      if (!profiles.has(a.id)) {
+        profiles.set(a.id, {
+          id: a.id,
+          name: a.name,
+          role: a.role,
+          systemPrompt: DEFAULT_PROMPTS[a.role]?.replace('{AGENT_NAME}', a.name) ?? '',
+          personality: DEFAULT_PERSONALITIES[a.role] ?? '',
+          specialization: DEFAULT_SPECIALIZATIONS[a.role] ?? '',
           tasksCompleted: 0,
           createdAt: Date.now(),
         });
       }
     }
-    set({ agents, agentProfiles: new Map(profiles) });
-    syncSectorStats(get);
+    set({ agents, agentProfiles: profiles });
   },
 
   addLogEntry: (message) => {
@@ -233,13 +197,11 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       if (state.tickets.some(t => t.id === ticket.id)) return state;
       return { tickets: [...state.tickets, ticket] };
     });
-    syncSectorStats(get);
   },
   updateTicket: (id, updates) => {
     set(state => ({
       tickets: state.tickets.map(t => t.id === id ? { ...t, ...updates } : t),
     }));
-    syncSectorStats(get);
   },
 
   addCase: (c) => {
@@ -247,54 +209,41 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       if (state.cases.some(existing => existing.casoId === c.casoId)) return state;
       return { cases: [...state.cases, c] };
     });
-    syncSectorStats(get);
   },
   updateCase: (casoId, updates) => {
     set(state => ({
       cases: state.cases.map(c => c.casoId === casoId ? { ...c, ...updates } : c),
     }));
-    syncSectorStats(get);
   },
 
   hireAgent: (role) => {
-    const os = get().officeState;
-    if (!os) return;
+    const socket = get().socket;
+    if (!socket) return;
     const personality = generateAgentPersonality();
-    const behavior = parsePersonalityBehavior(personality);
-    const ch = (os as any).addAgent(role, behavior);
-    if (ch) {
-      const socket = get().socket;
-      if (ch && socket) {
-        socket.emit('agent:hired', { id: ch.id, name: ch.name, role: ch.role, personality });
-      }
-      get().addLogEntry(`${ch.name} (${role}) contratado(a)!`);
-      get().syncAgents();
-    } else {
-      get().addLogEntry(`Sem mesas disponíveis para ${role}`);
-    }
+    socket.emit('agent:hired', { role, personality });
+    get().addLogEntry(`Contratando ${role}...`);
   },
 
   fireAgent: (id) => {
-    const os = get().officeState;
-    if (!os) return;
-    const ch = (os as any).characters.get(id);
-    if (!ch) return;
+    const agent = get().agents.find(a => a.id === id);
+    if (!agent) return;
     const socket = get().socket;
     if (socket) {
-      socket.emit('agent:fired', { id, role: ch.role, name: ch.name });
+      socket.emit('agent:fired', { id, role: agent.role, name: agent.name });
     }
-    (os as any).removeAgent(id);
-    get().addLogEntry(`${ch.name} (${ch.role}) demitido(a)`);
-    const profiles = get().agentProfiles;
+    // Remove from local state
+    set(state => ({
+      agents: state.agents.filter(a => a.id !== id),
+    }));
+    const profiles = new Map(get().agentProfiles);
     profiles.delete(id);
-    set({ agentProfiles: new Map(profiles) });
-    setTimeout(() => get().syncAgents(), 100);
+    set({ agentProfiles: profiles });
+    get().addLogEntry(`${agent.name} (${agent.role}) demitido(a)`);
   },
 
   openChat: (agentId) => {
     set({ chatAgentId: agentId });
 
-    // Load chat history from backend if not already loaded
     const existing = get().chatHistories.get(agentId);
     if (!existing || existing.length === 0) {
       const channelId = `dashboard_${agentId}`;
@@ -319,7 +268,6 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   },
   closeChat: () => set({ chatAgentId: null }),
 
-  // Send chat message via WebSocket to backend (real AI)
   sendChatMessage: (text) => {
     const { chatAgentId, chatHistories, agents, socket, agentProfiles } = get();
     if (!chatAgentId) return;
@@ -327,7 +275,6 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     const histories = new Map(chatHistories);
     const history = histories.get(chatAgentId) || [];
 
-    // Add user message locally
     history.push({
       id: `msg_${++msgCounter}`,
       from: 'user',
@@ -341,7 +288,6 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     const profile = agentProfiles.get(chatAgentId);
 
     if (socket && agent && profile) {
-      // Send to backend for real AI processing
       socket.emit('chat:message', {
         agentId: chatAgentId,
         agentName: agent.name,
@@ -350,15 +296,13 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
         message: text,
       });
     } else {
-      // Fallback: local response
-      get().onChatResponse(chatAgentId, 'Servidor não conectado. Verifique se o backend está rodando.');
+      get().onChatResponse(chatAgentId, 'Servidor nao conectado. Verifique se o backend esta rodando.');
     }
   },
 
   onChatResponse: (agentId, response) => {
     const histories = new Map(get().chatHistories);
     const history = histories.get(agentId) || [];
-    const agent = get().agents.find(a => a.id === agentId);
 
     history.push({
       id: `msg_${++msgCounter}`,
@@ -380,31 +324,30 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   },
 
   renameAgent: (agentId, newName) => {
-    const os = get().officeState;
+    const agent = get().agents.find(a => a.id === agentId);
+    if (!agent) return;
+    const oldName = agent.name;
     const socket = get().socket;
-    if (!os) return;
 
-    const ch = (os as any).characters.get(agentId);
-    if (ch) {
-      const oldName = ch.name;
-      ch.name = newName;
+    // Update local agents list
+    set(state => ({
+      agents: state.agents.map(a => a.id === agentId ? { ...a, name: newName } : a),
+    }));
 
-      // Update profile
-      const profiles = new Map(get().agentProfiles);
-      const profile = profiles.get(agentId);
-      if (profile) {
-        profiles.set(agentId, { ...profile, name: newName });
-        set({ agentProfiles: profiles });
-      }
-
-      // Notify server
-      if (socket) {
-        socket.emit('agent:rename', { agentId, name: newName, role: ch.role });
-      }
-
-      get().syncAgents();
-      get().addLogEntry(`${oldName} renomeado para ${newName}`);
+    // Update profile
+    const profiles = new Map(get().agentProfiles);
+    const profile = profiles.get(agentId);
+    if (profile) {
+      profiles.set(agentId, { ...profile, name: newName });
+      set({ agentProfiles: profiles });
     }
+
+    // Notify server
+    if (socket) {
+      socket.emit('agent:rename', { agentId, name: newName, role: agent.role });
+    }
+
+    get().addLogEntry(`${oldName} renomeado para ${newName}`);
   },
 
   resolveCase: (casoId) => {
@@ -432,22 +375,15 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
     set(state => ({
       cases: state.cases.filter(c => c.casoId !== casoId),
     }));
-    syncSectorStats(get);
   },
 
   openCaseDetail: (casoId) => set({ selectedCaseId: casoId, caseDetailOpen: true }),
   closeCaseDetail: () => set({ caseDetailOpen: false, selectedCaseId: null }),
 
   getAgentProfile: (agentId) => get().agentProfiles.get(agentId),
-  setContextMenu: (menu) => set({ contextMenu: menu }),
 
   setQueueSize: (size) => {
     set({ queueSize: size });
-    const os = get().officeState;
-    if (os) {
-      (os as any).queueSize = size;
-    }
-    syncSectorStats(get);
   },
 
   updateActiveConversation: (channelId, data) => {
@@ -465,7 +401,7 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       meetingLoading: false,
       chatAgentId: null,
     });
-    get().addLogEntry(`Reunião iniciada: ${topic}`);
+    get().addLogEntry(`Reuniao iniciada: ${topic}`);
   },
 
   restoreMeeting: (topic, participants, messages) => {
@@ -485,7 +421,7 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       meetingLoading: false,
       chatAgentId: null,
     });
-    get().addLogEntry('Reunião restaurada');
+    get().addLogEntry('Reuniao restaurada');
   },
 
   endMeeting: () => {
@@ -500,7 +436,7 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       meetingMessages: [],
       meetingLoading: false,
     });
-    get().addLogEntry('Reunião encerrada');
+    get().addLogEntry('Reuniao encerrada');
   },
 
   sendMeetingMessage: (text) => {
@@ -519,8 +455,6 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
       meetingLoading: true,
     });
 
-    // Detect if the message targets a specific agent by name
-    // e.g. "Carlos, o que voce acha?" or "Ana qual o status?"
     const textLower = text.toLowerCase();
     let targetAgent: string | undefined;
     for (const name of meetingParticipants) {

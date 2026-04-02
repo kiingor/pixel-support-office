@@ -3,9 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toMajorMinor } from './changelogData.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
-// TODO: Re-enable after fixing store compatibility
-// import { ControlPanel } from './components/ControlPanel.js';
-// import { CaseDetailModal } from './components/CaseDetailModal.js';
+import { ControlPanel } from './components/ControlPanel.js';
+import { CaseDetailModal } from './components/CaseDetailModal.js';
 import { DebugView } from './components/DebugView.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
@@ -182,6 +181,7 @@ function App() {
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -502,7 +502,46 @@ function App() {
       )}
     </div>
 
-    {/* TODO: Re-enable sidebar after fixing store compatibility */}
+    {/* Sidebar toggle button */}
+    <button
+      onClick={() => setPanelCollapsed(prev => !prev)}
+      style={{
+        position: 'absolute',
+        right: panelCollapsed ? 0 : 320,
+        top: 8,
+        zIndex: 60,
+        background: 'var(--pixel-btn-bg, #1e1e2e)',
+        color: 'var(--pixel-text-dim, #ccc)',
+        border: '2px solid var(--pixel-border, #444)',
+        borderRadius: 0,
+        padding: '4px 8px',
+        fontSize: '18px',
+        cursor: 'pointer',
+        transition: 'right 0.2s ease',
+      }}
+      title={panelCollapsed ? 'Open panel' : 'Close panel'}
+    >
+      {panelCollapsed ? '\u25C0' : '\u25B6'}
+    </button>
+
+    {/* Right sidebar */}
+    {!panelCollapsed && (
+      <div
+        style={{
+          width: 320,
+          height: '100%',
+          overflow: 'hidden',
+          flexShrink: 0,
+          borderLeft: '2px solid var(--pixel-border, #444)',
+          background: 'var(--pixel-bg, #1e1e2e)',
+        }}
+      >
+        <ControlPanel />
+      </div>
+    )}
+
+    {/* Case detail overlay */}
+    <CaseDetailModal />
     </div>
   );
 }
