@@ -3,8 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toMajorMinor } from './changelogData.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
-import { ControlPanel } from './components/ControlPanel.js';
-import { CaseDetailModal } from './components/CaseDetailModal.js';
+// TODO: Re-enable after fixing store compatibility
+// import { ControlPanel } from './components/ControlPanel.js';
+// import { CaseDetailModal } from './components/CaseDetailModal.js';
 import { DebugView } from './components/DebugView.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
@@ -489,30 +490,7 @@ function App() {
       )}
     </div>
 
-    {/* Sidebar toggle */}
-    <button
-      onClick={() => setPanelCollapsed(v => !v)}
-      style={{
-        flexShrink: 0, width: 20, background: '#0f3460', border: 'none',
-        borderLeft: '1px solid #1a4a8a', borderRight: '1px solid #1a4a8a',
-        color: '#a0c4ff', cursor: 'pointer', display: 'flex',
-        alignItems: 'center', justifyContent: 'center', fontSize: 12,
-      }}
-    >
-      {panelCollapsed ? '◀' : '▶'}
-    </button>
-
-    {/* Control Panel sidebar */}
-    <div style={{
-      width: panelCollapsed ? 0 : 320, minWidth: 0, flexShrink: 0,
-      background: '#16213e', borderLeft: panelCollapsed ? 'none' : '2px solid #0f3460',
-      overflow: 'hidden', display: 'flex', flexDirection: 'column',
-      transition: 'width 0.15s ease',
-    }}>
-      <ControlPanel />
-    </div>
-
-    <CaseDetailModal />
+    {/* TODO: Re-enable sidebar after fixing store compatibility */}
     </div>
   );
 }
