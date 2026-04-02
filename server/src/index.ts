@@ -706,7 +706,8 @@ app.get('/api/agent-conversations', async (_, res) => {
 });
 
 // Save/load office layout
-const LAYOUT_FILE = join(__dirname, '..', '..', 'data', 'office-layout.json');
+const LAYOUT_DIR = join(process.cwd(), '..', 'data');
+const LAYOUT_FILE = join(LAYOUT_DIR, 'office-layout.json');
 
 app.get('/api/layout', (_req, res) => {
   try {
@@ -723,8 +724,7 @@ app.post('/api/layout', (req, res) => {
   try {
     const layout = req.body;
     if (!layout || !layout.tiles) return res.status(400).json({ error: 'Invalid layout' });
-    const dir = join(__dirname, '..', '..', 'data');
-    if (!existsSync(dir)) { mkdirSync(dir, { recursive: true }); }
+    if (!existsSync(LAYOUT_DIR)) { mkdirSync(LAYOUT_DIR, { recursive: true }); }
     writeFileSync(LAYOUT_FILE, JSON.stringify(layout), 'utf-8');
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
