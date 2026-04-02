@@ -218,10 +218,25 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
 
   hireAgent: (role) => {
     const socket = get().socket;
-    if (!socket) return;
+    if (!socket) {
+      console.warn('[Store] hireAgent: no socket');
+      return;
+    }
+    const id = crypto.randomUUID();
     const personality = generateAgentPersonality();
-    socket.emit('agent:hired', { role, personality });
-    get().addLogEntry(`Contratando ${role}...`);
+    const ROLE_NAMES: Record<string, string[]> = {
+      suporte: ['Ana', 'Bruno', 'Carla', 'Daniel', 'Elena', 'Felipe'],
+      qa: ['Carlos', 'Marina', 'Rafael', 'Patricia', 'Thiago'],
+      qa_manager: ['Beatriz', 'Rodrigo'],
+      dev: ['Lucas', 'Julia', 'Pedro', 'Fernanda', 'Gustavo'],
+      dev_lead: ['Alexandre', 'Camila'],
+      log_analyzer: ['Monitor', 'Sentinel', 'Vigil', 'Watcher'],
+      ceo: ['Director Silva'],
+    };
+    const names = ROLE_NAMES[role] || ['Agent'];
+    const name = names[Math.floor(Math.random() * names.length)];
+    socket.emit('agent:hired', { id, name, role, personality });
+    get().addLogEntry(`Contratando ${name} (${role})...`);
   },
 
   fireAgent: (id) => {

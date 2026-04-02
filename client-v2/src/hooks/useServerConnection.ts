@@ -276,10 +276,16 @@ export function useServerConnection(
 
     // ── CEO actions ──────────────────────────────────────────────
     socket.on('ceo:action', (data: { type: string; role?: string; agentName?: string }) => {
+      const store = useOfficeStore.getState();
       if (data.type === 'hire' && data.role) {
-        useOfficeStore.getState().addLogEntry(`CEO contratou: ${data.role}`);
+        store.hireAgent(data.role as any);
+        store.addLogEntry(`CEO contratou: ${data.role}`);
       } else if (data.type === 'fire' && data.agentName) {
-        useOfficeStore.getState().addLogEntry(`CEO demitiu: ${data.agentName}`);
+        const agent = store.agents.find(a => a.name === data.agentName);
+        if (agent) {
+          store.fireAgent(agent.id);
+        }
+        store.addLogEntry(`CEO demitiu: ${data.agentName}`);
       }
     });
 
