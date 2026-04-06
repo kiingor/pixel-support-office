@@ -78,6 +78,7 @@ export function createCharacter(
     seatTimer: 0,
     isSubagent: false,
     parentAgentId: null,
+    inMeeting: false,
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
@@ -87,7 +88,7 @@ export function createCharacter(
 export function updateCharacter(
   ch: Character,
   dt: number,
-  walkableTiles: Array<{ col: number; row: number }>,
+  _walkableTiles: Array<{ col: number; row: number }>,
   seats: Map<string, Seat>,
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
@@ -121,8 +122,8 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
-      // If became active, pathfind to seat
-      if (ch.isActive) {
+      // If became active, pathfind to seat (but NOT during a meeting)
+      if (ch.isActive && !ch.inMeeting) {
         if (!ch.seatId) {
           // No seat assigned — type in place
           ch.state = CharacterState.TYPE;
@@ -175,7 +176,10 @@ export function updateCharacter(
         ch.y = center.y;
 
         if (ch.isActive) {
-          if (!ch.seatId) {
+          if (ch.inMeeting) {
+            // In a meeting — stay idle at meeting location, don't return to seat
+            ch.state = CharacterState.IDLE;
+          } else if (!ch.seatId) {
             // No seat — type in place
             ch.state = CharacterState.TYPE;
           } else {

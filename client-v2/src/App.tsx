@@ -520,7 +520,7 @@ function App() {
       onClick={() => setPanelCollapsed(prev => !prev)}
       style={{
         position: 'absolute',
-        right: panelCollapsed ? 0 : 500,
+        right: panelCollapsed ? 0 : 600,
         top: 8,
         zIndex: 60,
         background: 'var(--pixel-btn-bg, #1e1e2e)',
@@ -541,7 +541,7 @@ function App() {
     {!panelCollapsed && (
       <div
         style={{
-          width: 500,
+          width: 600,
           height: '100%',
           overflow: 'hidden',
           flexShrink: 0,

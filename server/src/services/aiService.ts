@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { buildCodeContextForBug, searchCode, getProjectStructure, syncRepo } from './codeAnalysis.js';
@@ -8,27 +7,31 @@ dotenv.config({ path: '.env' });
 dotenv.config({ path: '../.env' });
 dotenv.config({ path: '../../.env' });
 
-// Claude — only for complex code generation (generateDevCase)
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  maxRetries: 3,
+// ── Qwen 3.6 Plus via OpenRouter (FREE) — used for ALL tasks ──
+const openrouter = new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
 });
-const SONNET = 'claude-sonnet-4-6';        // Only for generateDevCase (needs quality for prompt_ia)
-const HAIKU = 'claude-haiku-4-5-20251001'; // For QA analysis, reviews, log classification
-// Legacy aliases
-const MODEL = SONNET;
-const CHEAP_MODEL = HAIKU;
+const QWEN_MODEL = 'qwen/qwen3.6-plus:free';
 
-// Google Gemini — primary model for most tasks (cheap + fast)
+// ── Google Gemini — ONLY for multimodal (video/audio transcription) ──
 const gemini = new OpenAI({
   baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
   apiKey: process.env.GOOGLE_API_KEY,
 });
-const GEMINI_FLASH = 'gemini-2.0-flash';       // For support chat, ticket classification
-const GEMINI_LITE = process.env.GOOGLE_MODEL || 'gemini-2.0-flash-lite'; // For bubbles, agent chat
-// Legacy alias
-const openrouter = gemini;
-const THINKING_MODEL = GEMINI_LITE;
+
+/** Helper: Call Qwen via OpenRouter — drop-in for all AI calls */
+async function qwenChat(system: string, userMessage: string, maxTokens = 2048): Promise<string> {
+  const response = await openrouter.chat.completions.create({
+    model: QWEN_MODEL,
+    max_tokens: maxTokens,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userMessage },
+    ],
+  });
+  return response.choices[0]?.message?.content || '';
+}
 
 export interface ClassificationResult {
   classificacao: 'duvida' | 'bug';
@@ -79,22 +82,18 @@ export interface DevReviewResult {
   observacoes: string;
 }
 
-// Support agent: classify ticket and respond — uses Gemini Flash (cheap)
+// Support agent: classify ticket and respond
 export async function classifyTicket(
   agentName: string,
   systemPrompt: string,
   userMessage: string,
 ): Promise<ClassificationResult> {
   try {
-    const response = await gemini.chat.completions.create({
-      model: GEMINI_FLASH,
-      max_tokens: 1024,
-      messages: [
-        { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
-        { role: 'user', content: userMessage },
-      ],
-    });
-    const text = response.choices[0]?.message?.content || '';
+    const text = await qwenChat(
+      systemPrompt.replace('{AGENT_NAME}', agentName),
+      userMessage,
+      1024,
+    );
 
     // Try to parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -144,14 +143,7 @@ e sugira correções baseadas no código real.
 
 ${codeContext}`;
 
-    const response = await client.messages.create({
-      model: HAIKU, // QA analysis uses Haiku (cheaper, structured JSON output)
-      max_tokens: 4096,
-      system: enhancedPrompt,
-      messages: [{ role: 'user', content: `Bug Report:\n${bugReport}\n\nBug ID: ${bugId}` }],
-    });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = await qwenChat(enhancedPrompt, `Bug Report:\n${bugReport}\n\nBug ID: ${bugId}`, 4096);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -223,17 +215,12 @@ REGRAS OBRIGATÓRIAS PARA O CASO:
 
 ${codeContext}`;
 
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 8192,
-      system: enhancedPrompt,
-      messages: [{
-        role: 'user',
-        content: `Relatório do QA:\n${JSON.stringify(qaReport, null, 2)}\n\nCase ID: ${caseId}`,
-      }],
-    });
+    const text = await qwenChat(
+      enhancedPrompt,
+      `Relatório do QA:\n${JSON.stringify(qaReport, null, 2)}\n\nCase ID: ${caseId}`,
+      8192,
+    );
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -268,7 +255,7 @@ ${codeContext}`;
   }
 }
 
-// QA Manager: review QA analysis before escalating to DEV — uses Haiku (cheap review)
+// QA Manager: review QA analysis
 export async function reviewQA(
   managerName: string,
   systemPrompt: string,
@@ -276,17 +263,11 @@ export async function reviewQA(
   bugId: string,
 ): Promise<QAReviewResult> {
   try {
-    const response = await client.messages.create({
-      model: HAIKU,
-      max_tokens: 2048,
-      system: systemPrompt.replace('{AGENT_NAME}', managerName),
-      messages: [{
-        role: 'user',
-        content: `Revise esta análise de QA feita pelo seu time:\n\n${JSON.stringify(qaReport, null, 2)}\n\nBug ID: ${bugId}`,
-      }],
-    });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = await qwenChat(
+      systemPrompt.replace('{AGENT_NAME}', managerName),
+      `Revise esta análise de QA feita pelo seu time:\n\n${JSON.stringify(qaReport, null, 2)}\n\nBug ID: ${bugId}`,
+      2048,
+    );
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -301,7 +282,7 @@ export async function reviewQA(
   }
 }
 
-// Dev Lead: review dev case before saving to DB — uses Haiku (cheap review)
+// Dev Lead: review dev case before saving to DB
 export async function reviewDevCase(
   leadName: string,
   systemPrompt: string,
@@ -309,17 +290,11 @@ export async function reviewDevCase(
   caseId: string,
 ): Promise<DevReviewResult> {
   try {
-    const response = await client.messages.create({
-      model: HAIKU,
-      max_tokens: 2048,
-      system: systemPrompt.replace('{AGENT_NAME}', leadName),
-      messages: [{
-        role: 'user',
-        content: `Revise este caso criado pelo dev:\n\n${JSON.stringify(devCase, null, 2)}\n\nCase ID: ${caseId}`,
-      }],
-    });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = await qwenChat(
+      systemPrompt.replace('{AGENT_NAME}', leadName),
+      `Revise este caso criado pelo dev:\n\n${JSON.stringify(devCase, null, 2)}\n\nCase ID: ${caseId}`,
+      2048,
+    );
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
@@ -334,21 +309,18 @@ export async function reviewDevCase(
   }
 }
 
-// Log analyzer: analyze system logs (uses cheap model — runs every 5 min)
+// Log analyzer: analyze system logs
 export async function analyzeLogs(
   agentName: string,
   systemPrompt: string,
   logs: string,
 ): Promise<{ hasAnomaly: boolean; report?: string }> {
   try {
-    const response = await client.messages.create({
-      model: CHEAP_MODEL,
-      max_tokens: 1024,
-      system: systemPrompt.replace('{AGENT_NAME}', agentName),
-      messages: [{ role: 'user', content: `Logs recentes:\n${logs}` }],
-    });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = await qwenChat(
+      systemPrompt.replace('{AGENT_NAME}', agentName),
+      `Logs recentes:\n${logs}`,
+      1024,
+    );
 
     if (text.toLowerCase().includes('"status": "normal"') || text.toLowerCase().includes('normal')) {
       return { hasAnomaly: false };
@@ -407,14 +379,12 @@ Responda APENAS em JSON:
 {"classification": "real_error|known_issue|false_positive", "titulo": "Titulo curto do erro", "descricao": "Descrição técnica breve", "prioridade": "alta|media|baixa"}`;
 
   try {
-    const response = await client.messages.create({
-      model: CHEAP_MODEL,
-      max_tokens: 300,
-      system: systemPrompt.replace('{AGENT_NAME}', agentName),
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const text = await qwenChat(
+      systemPrompt.replace('{AGENT_NAME}', agentName),
+      prompt,
+      300,
+    );
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -440,7 +410,7 @@ export interface Attachment {
 
 /**
  * Describe/transcribe a video or audio file using Google Gemini (supports multimodal).
- * Downloads the media and sends to Gemini for analysis.
+ * Qwen via OpenRouter does NOT support multimodal, so Gemini is kept for this.
  */
 async function describeMediaWithGemini(url: string, type: 'video' | 'audio', name: string): Promise<string> {
   try {
@@ -448,8 +418,8 @@ async function describeMediaWithGemini(url: string, type: 'video' | 'audio', nam
       ? `Analise este vídeo e descreva em detalhes o que está acontecendo. Se houver texto na tela (erro, interface), transcreva-o. Se houver áudio/fala, transcreva o que foi dito. Responda em português brasileiro.`
       : `Transcreva o áudio completo deste arquivo. Se não conseguir transcrever, descreva o que ouviu (tom, idioma, contexto). Responda em português brasileiro.`;
 
-    const response = await openrouter.chat.completions.create({
-      model: 'gemini-2.0-flash',  // Full flash model (not lite) for multimodal
+    const response = await gemini.chat.completions.create({
+      model: 'gemini-2.0-flash',
       max_tokens: 2048,
       messages: [
         {
@@ -475,9 +445,8 @@ async function describeMediaWithGemini(url: string, type: 'video' | 'audio', nam
 }
 
 /**
- * Support agent chat — uses Gemini Flash (cheap + fast).
- * Injects real SoftcomHub code context and supports multimodal attachments.
- * Falls back to Claude Haiku if Gemini fails.
+ * Support agent chat — uses Qwen via OpenRouter.
+ * Injects real SoftcomHub code context and supports multimodal attachments (via Gemini).
  */
 export async function supportChat(
   agentName: string,
@@ -503,75 +472,49 @@ ${codeContext}`;
 
   for (const vid of videoAttachments) {
     const desc = await describeMediaWithGemini(vid.url, 'video', vid.name);
-    enrichedMessage += `\n\n📹 VÍDEO (${vid.name}):\n${desc}`;
+    enrichedMessage += `\n\n[VIDEO] ${vid.name}:\n${desc}`;
   }
   for (const aud of audioAttachments) {
     const desc = await describeMediaWithGemini(aud.url, 'audio', aud.name);
-    enrichedMessage += `\n\n🎤 ÁUDIO (${aud.name}):\n${desc}`;
+    enrichedMessage += `\n\n[AUDIO] ${aud.name}:\n${desc}`;
+  }
+  if (imageAttachments.length > 0) {
+    enrichedMessage += `\n\n[IMAGENS RECEBIDAS: ${imageAttachments.map(a => a.name).join(', ')} — análise visual não disponível neste modelo]`;
   }
   if (docAttachments.length > 0) {
     enrichedMessage += `\n\nDocumentos: ${docAttachments.map(a => `${a.name}: ${a.url}`).join(', ')}`;
   }
 
-  // Build messages array for Gemini (OpenAI-compatible format)
-  const messages: Array<{ role: string; content: any }> = [
+  // Build messages for OpenRouter (OpenAI-compatible)
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: enhancedSystem },
-    ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
+    ...conversationHistory.map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+    { role: 'user', content: enrichedMessage },
   ];
 
-  // If images, use multimodal content
-  if (imageAttachments.length > 0) {
-    const content: any[] = [{ type: 'text', text: enrichedMessage }];
-    for (const img of imageAttachments) {
-      content.push({ type: 'image_url', image_url: { url: img.url } });
-    }
-    messages.push({ role: 'user', content });
-  } else {
-    messages.push({ role: 'user', content: enrichedMessage });
-  }
-
-  // Try Gemini Flash first (cheap)
   try {
-    const response = await gemini.chat.completions.create({
-      model: GEMINI_FLASH,
+    const response = await openrouter.chat.completions.create({
+      model: QWEN_MODEL,
       max_tokens: 1024,
-      messages: messages as any,
+      messages,
     });
     return response.choices[0]?.message?.content || 'Sem resposta.';
   } catch (error: any) {
-    console.warn(`[AI] supportChat Gemini failed, falling back to Haiku:`, error?.message);
-  }
-
-  // Fallback to Claude Haiku
-  try {
-    const response = await client.messages.create({
-      model: HAIKU,
-      max_tokens: 1024,
-      system: enhancedSystem,
-      messages: [
-        ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
-        { role: 'user', content: enrichedMessage },
-      ],
-    });
-    return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
-  } catch (error) {
-    console.error('AI supportChat fallback error:', error);
+    console.error('[AI] supportChat error:', error?.message);
     return 'Desculpe, estou com dificuldades técnicas no momento.';
   }
 }
 
-// Generic chat with any agent — uses Gemini, falls back to Haiku
-// CEO uses Gemini Flash (better at structured JSON actions), others use Lite
+// Generic chat with any agent — uses Qwen via OpenRouter
 export async function chatWithAgent(
   agentName: string,
   systemPrompt: string,
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
 ): Promise<string> {
-  // Detect if this is CEO (needs better model for action blocks)
-  const isCEO = systemPrompt.includes('CEO') || systemPrompt.includes('PODER TOTAL');
-  const model = isCEO ? GEMINI_FLASH : THINKING_MODEL;
-
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt.replace('{AGENT_NAME}', agentName) },
     ...conversationHistory.map(m => ({
@@ -581,49 +524,20 @@ export async function chatWithAgent(
     { role: 'user', content: userMessage },
   ];
 
-  // Try Gemini Flash first
   try {
-    const response = await gemini.chat.completions.create({
-      model,
-      max_tokens: isCEO ? 2048 : 1024,
+    const response = await openrouter.chat.completions.create({
+      model: QWEN_MODEL,
+      max_tokens: 2048,
       messages,
     });
     return response.choices[0]?.message?.content || 'Sem resposta.';
   } catch (error: any) {
-    console.warn(`[AI] chatWithAgent Gemini ${model} failed: ${error?.message?.slice(0, 80)}`);
-  }
-
-  // Fallback 1: Try Gemini Lite (different model, may not be rate limited)
-  if (model !== GEMINI_LITE) {
-    try {
-      const response = await gemini.chat.completions.create({
-        model: GEMINI_LITE,
-        max_tokens: 1024,
-        messages,
-      });
-      return response.choices[0]?.message?.content || 'Sem resposta.';
-    } catch (error: any) {
-      console.warn(`[AI] chatWithAgent Gemini Lite also failed: ${error?.message?.slice(0, 80)}`);
-    }
-  }
-
-  // Fallback 2: Try Claude Haiku (only if credits available)
-  try {
-    const response = await client.messages.create({
-      model: CHEAP_MODEL,
-      max_tokens: 1024,
-      system: systemPrompt.replace('{AGENT_NAME}', agentName),
-      messages: conversationHistory.map(m => ({ role: m.role, content: m.content }))
-        .concat([{ role: 'user', content: userMessage }]),
-    });
-    return response.content[0].type === 'text' ? response.content[0].text : 'Sem resposta.';
-  } catch (error) {
-    console.error('AI chatWithAgent all models failed:', (error as Error).message?.slice(0, 100));
-    return 'Estou com todos os serviços de IA sobrecarregados. Tente novamente em alguns segundos.';
+    console.error('[AI] chatWithAgent error:', error?.message);
+    return 'Estou com dificuldades técnicas. Tente novamente em alguns segundos.';
   }
 }
 
-// Generate a dynamic bubble text based on agent personality — uses OpenRouter, falls back to Claude
+// Generate a dynamic bubble text based on agent personality
 export async function generateBubble(
   agentName: string,
   agentPersonality: string,
@@ -634,10 +548,9 @@ Gere UMA frase curta (máx 8 palavras) que este agente pensaria ou falaria em vo
 Seja fiel à personalidade. Responda APENAS a frase, sem aspas, sem explicação.
 Use português brasileiro informal.`;
 
-  // Try OpenRouter first
   try {
     const response = await openrouter.chat.completions.create({
-      model: THINKING_MODEL,
+      model: QWEN_MODEL,
       max_tokens: 60,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -645,19 +558,6 @@ Use português brasileiro informal.`;
       ],
     });
     return response.choices[0]?.message?.content?.trim() || situation;
-  } catch (error: any) {
-    console.warn(`[OpenRouter] generateBubble ${error?.status === 429 ? 'rate limited' : 'error'} — falling back to Claude`);
-  }
-
-  // Fallback to Claude Haiku (cheap)
-  try {
-    const response = await client.messages.create({
-      model: CHEAP_MODEL,
-      max_tokens: 60,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: situation }],
-    });
-    return response.content[0].type === 'text' ? response.content[0].text.trim() : situation;
   } catch {
     return situation;
   }
@@ -665,8 +565,6 @@ Use português brasileiro informal.`;
 
 /**
  * Generate a single skill learning insight after a completed task.
- * Returns 1-2 sentences describing what the agent "learned" from this specific case.
- * Uses a fast, cheap call — haiku-class token budget.
  */
 export async function generateLearningInsight(
   agentName: string,
@@ -680,10 +578,8 @@ export async function generateLearningInsight(
     : 'Especialista';
 
   try {
-    const response = await client.messages.create({
-      model: CHEAP_MODEL,
-      max_tokens: 150,
-      system: `Você é um sistema de registro de aprendizado de agentes de IA.
+    const text = await qwenChat(
+      `Você é um sistema de registro de aprendizado de agentes de IA.
 Seu único trabalho é extrair UM insight específico e concreto que o agente "${agentName}" (${role}, nível ${levelLabel}) acabou de aprender ao concluir uma tarefa.
 O insight deve ser:
 - 1 a 2 frases no máximo
@@ -692,17 +588,13 @@ O insight deve ser:
 - Acionável — algo que mudará como o agente age no futuro
 - Em português brasileiro
 Responda APENAS com o texto do insight, sem JSON, sem rodeios.`,
-      messages: [{
-        role: 'user',
-        content: `Resumo da tarefa concluída:\n${taskSummary}\n\nQual foi o principal aprendizado desta tarefa?`,
-      }],
-    });
+      `Resumo da tarefa concluída:\n${taskSummary}\n\nQual foi o principal aprendizado desta tarefa?`,
+      150,
+    );
 
-    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
-    return text || '';
+    return text.trim() || '';
   } catch (error) {
     console.error('generateLearningInsight error:', error);
     return '';
   }
 }
-

@@ -28,6 +28,7 @@ export function ControlPanel() {
     logEntries, tickets, cases, chatAgentId, resolveCase, deleteCase,
     queueSize, meetingActive, openCaseDetail, renameAgent, agentConversations,
     agentWorkStatuses,
+    conversationModalOpen, conversationModalKey, openConversationModal, closeConversationModal,
   } = useOfficeStore();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -68,10 +69,10 @@ export function ControlPanel() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#16213e' }}>
       {/* Header */}
       <div style={{ padding: '10px 14px', background: '#0f3460', borderBottom: '2px solid #1a4a8a' }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#e94560', letterSpacing: 1 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#e94560', letterSpacing: 1 }}>
           PIXEL SUPPORT OFFICE
         </div>
-        <div style={{ fontSize: 10, color: '#5a7a9a', marginTop: 2 }}>
+        <div style={{ fontSize: 15, color: '#5a7a9a', marginTop: 2 }}>
           {agents.length} agentes ativos
         </div>
       </div>
@@ -83,7 +84,7 @@ export function ControlPanel() {
             key={tab}
             onClick={() => setActiveTab(tab)}
             style={{
-              flex: 1, padding: '8px 0', border: 'none', cursor: 'pointer', fontSize: 11,
+              flex: 1, padding: '10px 0', border: 'none', cursor: 'pointer', fontSize: 16,
               fontWeight: activeTab === tab ? 700 : 400,
               color: activeTab === tab ? '#e94560' : '#5a7a9a',
               background: activeTab === tab ? '#16213e' : 'transparent',
@@ -94,12 +95,12 @@ export function ControlPanel() {
             <span style={{ marginRight: 4 }}>{TAB_ICONS[tab]}</span>
             {tab}
             {tab === 'Fila' && queueSize > 0 && (
-              <span style={{ marginLeft: 4, background: '#e74c3c', color: 'white', borderRadius: 8, padding: '0 5px', fontSize: 9 }}>
+              <span style={{ marginLeft: 4, background: '#e74c3c', color: 'white', borderRadius: 8, padding: '0 5px', fontSize: 11 }}>
                 {queueSize}
               </span>
             )}
             {tab === 'Casos' && cases.filter(c => c.status !== 'resolved').length > 0 && (
-              <span style={{ marginLeft: 4, background: '#e94560', color: 'white', borderRadius: 8, padding: '0 5px', fontSize: 9 }}>
+              <span style={{ marginLeft: 4, background: '#e94560', color: 'white', borderRadius: 8, padding: '0 5px', fontSize: 11 }}>
                 {cases.filter(c => c.status !== 'resolved').length}
               </span>
             )}
@@ -142,22 +143,22 @@ export function ControlPanel() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>{agent.name}</span>
+                        <span style={{ fontSize: 17, fontWeight: 600, color: '#ffffff' }}>{agent.name}</span>
                         <span
                           onClick={e => { e.stopPropagation(); setRenamingId(agent.id); setRenameValue(agent.name); }}
-                          style={{ fontSize: 10, color: '#8899aa', cursor: 'pointer', padding: '0 3px' }}
+                          style={{ fontSize: 12, color: '#8899aa', cursor: 'pointer', padding: '0 3px' }}
                           title="Renomear"
                         >&#9998;</span>
                       </div>
                     )}
-                    <div style={{ fontSize: 10, color: '#5a7a9a' }}>
+                    <div style={{ fontSize: 15, color: '#5a7a9a' }}>
                       {ROLE_LABELS[agent.role]} - {agentWorkStatuses.get(agent.name)
                         ? <span style={{ color: '#2ecc71', fontWeight: 600 }}>{agentWorkStatuses.get(agent.name)}</span>
                         : <span style={{ color: '#666' }}>Ocioso</span>
                       }
                     </div>
                   </div>
-                  {renamingId !== agent.id && <span style={{ fontSize: 12, color: '#8899aa' }}>{'>'}</span>}
+                  {renamingId !== agent.id && <span style={{ fontSize: 14, color: '#8899aa' }}>{'>'}</span>}
                 </div>
               </div>
             ))}
@@ -168,7 +169,7 @@ export function ControlPanel() {
         {activeTab === 'Fila' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>Fila de Atendimento</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: '#e0e0e0' }}>Fila de Atendimento</span>
               {queueSize > 0 && <span className="badge badge-open">{queueSize} aguardando</span>}
             </div>
             {tickets.length === 0 && <div className="text-muted">Nenhum ticket na fila</div>}
@@ -177,10 +178,10 @@ export function ControlPanel() {
               return (
                 <div key={t.id} className="panel-card" style={{ cursor: 'default' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 12, color: '#e0e0e0' }}>{t.discordAuthor || 'Demo User'}</span>
+                    <span style={{ fontWeight: 600, fontSize: 16, color: '#e0e0e0' }}>{t.discordAuthor || 'Demo User'}</span>
                     <span className={`badge ${statusClass}`}>{t.status}</span>
                   </div>
-                  <div style={{ color: '#6a8aaa', marginTop: 3, fontSize: 11 }}>
+                  <div style={{ color: '#6a8aaa', marginTop: 3, fontSize: 15 }}>
                     {t.discordMessage?.slice(0, 80) || 'Ticket simulado'}
                   </div>
                 </div>
@@ -199,7 +200,7 @@ export function ControlPanel() {
                 placeholder="Buscar caso, bug ou titulo..."
                 value={caseSearch}
                 onChange={e => setCaseSearch(e.target.value)}
-                style={{ width: '100%', padding: '6px 10px', background: '#0a1428', border: '1px solid #1a3a5c', borderRadius: 4, color: '#fff', fontSize: 11, marginBottom: 6 }}
+                style={{ width: '100%', padding: '8px 12px', background: '#0a1428', border: '1px solid #1a3a5c', borderRadius: 4, color: '#fff', fontSize: 16, marginBottom: 6 }}
               />
               <div style={{ display: 'flex', gap: 4 }}>
                 {(['all', 'open', 'resolved'] as const).map(f => (
@@ -207,7 +208,7 @@ export function ControlPanel() {
                     key={f}
                     onClick={() => setCaseFilter(f)}
                     className={`btn btn-sm ${caseFilter === f ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ flex: 1, fontSize: 10 }}
+                    style={{ flex: 1, fontSize: 12 }}
                   >
                     {f === 'all' ? `Todos (${cases.length})` : f === 'open' ? `Abertos (${cases.filter(c => c.status !== 'resolved').length})` : `Resolvidos (${cases.filter(c => c.status === 'resolved').length})`}
                   </button>
@@ -240,7 +241,7 @@ export function ControlPanel() {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 12, color: isOpen ? '#e94560' : '#2ecc71' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: isOpen ? '#e94560' : '#2ecc71' }}>
                         {c.casoId}
                       </span>
                       {c.bugId && <span className="badge badge-bug">{c.bugId}</span>}
@@ -249,9 +250,9 @@ export function ControlPanel() {
                       {isOpen ? 'Aberto' : 'Resolvido'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: '#8aa', marginBottom: 4 }}>{c.titulo}</div>
+                  <div style={{ fontSize: 15, color: '#8aa', marginBottom: 4 }}>{c.titulo}</div>
                   {c.createdBy && (
-                    <div style={{ fontSize: 10, color: '#5a7a9a', marginBottom: 4 }}>
+                    <div style={{ fontSize: 14, color: '#5a7a9a', marginBottom: 4 }}>
                       Criado por: <span style={{ color: '#ff8844', fontWeight: 600 }}>{c.createdBy}</span>
                       {c.sourceSector && <span> ({c.sourceSector})</span>}
                     </div>
@@ -289,25 +290,86 @@ export function ControlPanel() {
         {/* === CHAT (Agent Conversations) === */}
         {activeTab === 'Chat' && (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: '#e0e0e0' }}>Conversas entre Agentes</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#e0e0e0' }}>Conversas entre Agentes</div>
             {agentConversations.length === 0 && (
               <div className="text-muted">Nenhuma conversa registrada ainda</div>
             )}
-            {[...agentConversations].reverse().map((conv, i) => (
-              <div key={i} className="panel-card" style={{ cursor: 'default', borderLeft: '3px solid #f39c12' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{ fontSize: 11 }}>
-                    <span style={{ fontWeight: 700, color: '#4488ff' }}>{conv.from}</span>
-                    <span style={{ color: '#7a8a9a' }}> ({conv.fromRole})</span>
-                    <span style={{ color: '#9aaa' }}> → </span>
-                    <span style={{ fontWeight: 700, color: '#2ecc71' }}>{conv.to}</span>
-                    <span style={{ color: '#7a8a9a' }}> ({conv.toRole})</span>
-                  </span>
-                  <span style={{ fontSize: 9, color: '#7a8a9a' }}>{conv.time}</span>
+            {(() => {
+              // Group conversations by agent pair
+              const groups = new Map<string, typeof agentConversations>();
+              for (const conv of agentConversations) {
+                const pair = [conv.from, conv.to].sort().join('↔');
+                const list = groups.get(pair) || [];
+                list.push(conv);
+                groups.set(pair, list);
+              }
+              return [...groups.entries()].reverse().map(([pair, convs]) => {
+                const last = convs[convs.length - 1];
+                return (
+                  <div
+                    key={pair}
+                    className="panel-card"
+                    style={{ cursor: 'pointer', borderLeft: '3px solid #f39c12' }}
+                    onClick={() => openConversationModal(pair)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span style={{ fontSize: 15 }}>
+                        <span style={{ fontWeight: 700, color: '#4488ff' }}>{last.from}</span>
+                        <span style={{ color: '#9aaa' }}> ↔ </span>
+                        <span style={{ fontWeight: 700, color: '#2ecc71' }}>{last.to}</span>
+                      </span>
+                      <span style={{ fontSize: 13, color: '#7a8a9a' }}>{convs.length} msgs</span>
+                    </div>
+                    <div style={{ fontSize: 14, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {last.message.slice(0, 80)}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+
+            {/* Conversation detail modal */}
+            {conversationModalOpen && conversationModalKey && (() => {
+              const pair = conversationModalKey;
+              const convs = agentConversations.filter(c => {
+                const p = [c.from, c.to].sort().join('↔');
+                return p === pair;
+              });
+              return (
+                <div className="modal-overlay" onClick={closeConversationModal}>
+                  <div className="modal-content" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <span style={{ fontSize: 18, fontWeight: 700, color: '#e0e0e0' }}>
+                        {pair.replace('↔', ' ↔ ')}
+                      </span>
+                      <button className="btn-icon" onClick={closeConversationModal} style={{ fontSize: 22 }}>X</button>
+                    </div>
+                    <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', maxHeight: '60vh' }}>
+                      {convs.map((conv, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            marginBottom: 10,
+                            padding: '10px 12px',
+                            borderRadius: 8,
+                            background: conv.from === pair.split('↔')[0] ? '#1a2a4e' : '#1a3a2e',
+                            borderLeft: `3px solid ${conv.from === pair.split('↔')[0] ? '#4488ff' : '#2ecc71'}`,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontWeight: 700, fontSize: 15, color: conv.from === pair.split('↔')[0] ? '#4488ff' : '#2ecc71' }}>
+                              {conv.from} <span style={{ fontWeight: 400, color: '#7a8a9a' }}>({conv.fromRole})</span>
+                            </span>
+                            <span style={{ fontSize: 13, color: '#666' }}>{conv.time}</span>
+                          </div>
+                          <div style={{ fontSize: 15, color: '#ccc', lineHeight: 1.5 }}>{conv.message}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: '#aaa' }}>{conv.message}</div>
-              </div>
-            ))}
+              );
+            })()}
           </div>
         )}
 

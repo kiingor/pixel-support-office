@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AgentRole } from '../types/agents';
 import type { AgentProfile } from '../types/agentProfile';
-import { DEFAULT_PROMPTS, DEFAULT_PERSONALITIES, DEFAULT_SPECIALIZATIONS, generateAgentPersonality, parsePersonalityBehavior } from '../types/agentProfile';
+import { DEFAULT_PROMPTS, DEFAULT_PERSONALITIES, DEFAULT_SPECIALIZATIONS, generateAgentPersonality } from '../types/agentProfile';
 import type { Socket } from 'socket.io-client';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (
@@ -77,8 +77,12 @@ interface OfficeStoreState {
   chatLoading: boolean;
   queueSize: number;
   activeConversations: Map<string, ActiveConversation>;
-  agentConversations: Array<{ from: string; fromRole: string; to: string; toRole: string; message: string; time: string }>;
-  addAgentConversation: (conv: { from: string; fromRole: string; to: string; toRole: string; message: string }) => void;
+  agentConversations: Array<{ from: string; fromRole: string; to: string; toRole: string; message: string; time: string; timestamp: number }>;
+  addAgentConversation: (conv: { from: string; fromRole: string; to: string; toRole: string; message: string; timestamp?: number }) => void;
+  conversationModalOpen: boolean;
+  conversationModalKey: string | null;
+  openConversationModal: (key: string) => void;
+  closeConversationModal: () => void;
   agentWorkStatuses: Map<string, string>;
   setAgentWorkStatus: (agentName: string, status: string) => void;
   clearAgentWorkStatus: (agentName: string) => void;
@@ -143,10 +147,15 @@ export const useOfficeStore = create<OfficeStoreState>((set, get) => ({
   agentConversations: [],
   addAgentConversation: (conv) => {
     const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const timestamp = conv.timestamp || Date.now();
     set(state => ({
-      agentConversations: [...state.agentConversations.slice(-100), { ...conv, time }],
+      agentConversations: [...state.agentConversations.slice(-100), { ...conv, time, timestamp }],
     }));
   },
+  conversationModalOpen: false,
+  conversationModalKey: null,
+  openConversationModal: (key) => set({ conversationModalOpen: true, conversationModalKey: key }),
+  closeConversationModal: () => set({ conversationModalOpen: false, conversationModalKey: null }),
   agentWorkStatuses: new Map(),
   setAgentWorkStatus: (agentName, status) => {
     const m = new Map(get().agentWorkStatuses);

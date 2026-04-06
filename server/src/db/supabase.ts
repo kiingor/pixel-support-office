@@ -182,6 +182,19 @@ export async function dbGetRecentAgentConversations(limit = 50): Promise<Array<{
   return data || [];
 }
 
+/** Get inter-agent conversations where a specific agent was sender or receiver */
+export async function dbGetAgentConversations(agentName: string, limit = 15): Promise<Array<{ message: string; created_at: string; payload: any }>> {
+  const { data, error } = await supabase
+    .from('agent_messages')
+    .select('message, created_at, payload')
+    .eq('type', 'conversation')
+    .or(`message.ilike.%${agentName} →%,message.ilike.%→ ${agentName}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) console.error('dbGetAgentConversations error:', error);
+  return data || [];
+}
+
 // Agent activity log — records what each agent DID (for memory/recall)
 export async function dbLogAgentActivity(agentName: string, role: string, action: string, details: string) {
   const { error } = await supabase.from('agent_messages').insert({

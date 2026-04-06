@@ -71,7 +71,7 @@ export function SectorLabels({
               transform: 'translate(-50%, -50%)',
               pointerEvents: 'none',
               zIndex: 30,
-              fontSize: '18px',
+              fontSize: '22px',
               fontWeight: 'bold',
               color: 'rgba(255, 255, 255, 0.55)',
               textShadow: '1px 1px 3px rgba(0, 0, 0, 0.7)',

@@ -144,7 +144,6 @@ function findChar(os: OfficeState, agentName?: string, role?: string) {
 }
 
 // ── Meeting seat cycling ─────────────────────────────────────────────
-let meetingSeatCounter = 0;
 
 /**
  * Socket.IO integration hook.
@@ -366,8 +365,6 @@ export function useWebSocket(
     socket.on('agent:return_to_seat', (data: { agentName: string }) => {
       const os = getOfficeState();
       if (!os) return;
-      meetingSeatCounter = 0;
-
       const ch = findCharByName(os, data.agentName);
       if (ch) {
         os.sendToSeat(ch.id);

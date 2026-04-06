@@ -126,7 +126,7 @@ export function useServerConnection(
         bugId: devCase.bug_id,
         titulo: devCase.titulo,
         promptIa: devCase.prompt_ia,
-        status: 'open',
+        status: devCase.status || 'open',
         createdBy: devCase.created_by,
         sourceSector: devCase.source_sector || 'DEV',
       });
@@ -220,6 +220,11 @@ export function useServerConnection(
       const ch = findChar(os, data.agentName, data.role);
       if (!ch) return;
 
+      // If walking to meeting room, mark as inMeeting so they stay there
+      if (data.toSectorId === 'MEETING_ROOM') {
+        ch.inMeeting = true;
+      }
+
       if (data.targetAgentName) {
         const target = findCharByName(os, data.targetAgentName);
         if (target) {
@@ -251,7 +256,10 @@ export function useServerConnection(
       const os = getOfficeState();
       if (!os) return;
       const ch = findCharByName(os, data.agentName);
-      if (ch) os.sendToSeat(ch.id);
+      if (ch) {
+        ch.inMeeting = false;
+        os.sendToSeat(ch.id);
+      }
     });
 
     // ── Agent renamed ────────────────────────────────────────────

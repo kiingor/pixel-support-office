@@ -73,8 +73,8 @@ body,
 
 /* === Panel UI === */
 .panel-card {
-  padding: 8px 10px;
-  margin-bottom: 4px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
   background: #0d1b3e;
   border-radius: 6px;
   border: 1px solid transparent;
@@ -86,9 +86,9 @@ body,
 
 .badge {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: 10px;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -109,9 +109,9 @@ body,
 .status-open { background: #e74c3c; box-shadow: 0 0 6px #e74c3c88; }
 .status-resolved { background: #2ecc71; box-shadow: 0 0 6px #2ecc7188; }
 
-.btn { padding: 6px 14px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600; transition: opacity 0.1s; }
+.btn { padding: 8px 16px; border: none; border-radius: 4px; font-size: 15px; cursor: pointer; font-weight: 600; transition: opacity 0.1s; }
 .btn:hover { opacity: 0.85; }
-.btn-sm { padding: 3px 8px; font-size: 10px; }
+.btn-sm { padding: 5px 12px; font-size: 14px; }
 .btn-success { background: #27ae60; color: white; }
 .btn-danger { background: #333; color: #e74c3c; border: 1px solid #e74c3c44; }
 .btn-danger-confirm { background: #c0392b; color: white; animation: pulse-red 0.5s; }
@@ -120,8 +120,8 @@ body,
 .btn-icon { background: none; border: none; color: #888; font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
 .btn-icon:hover { color: #e74c3c; background: #ffffff11; }
 
-.text-muted { color: #8899aa; font-size: 12px; }
-.section-title { font-size: 12px; color: #99aabb; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: 700; }
+.text-muted { color: #8899aa; font-size: 16px; }
+.section-title { font-size: 16px; color: #99aabb; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: 700; }
 
 /* === Modal === */
 .modal-overlay {
@@ -173,7 +173,7 @@ body,
   padding: 10px;
 }
 .prompt-code {
-  font-size: 11px;
+  font-size: 13px;
   color: #aaa;
   white-space: pre-wrap;
   max-height: 150px;
@@ -191,19 +191,19 @@ body,
   gap: 6px;
 }
 .msg {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 16px;
 }
 .msg-user { background: #1a2a4e; border-left: 3px solid #3498db; }
 .msg-agent { background: #1a3a2e; border-left: 3px solid #2ecc71; }
 .msg-header { display: flex; justify-content: space-between; margin-bottom: 3px; }
-.msg-author { font-weight: 700; font-size: 11px; }
-.msg-time { font-size: 10px; color: #666; }
+.msg-author { font-weight: 700; font-size: 15px; }
+.msg-time { font-size: 13px; color: #666; }
 .msg-text { color: #ccc; line-height: 1.4; }
 
 /* Logs */
-.log-entry { padding: 2px 0; border-bottom: 1px solid #0a1428; font-size: 11px; font-family: monospace; }
+.log-entry { padding: 4px 0; border-bottom: 1px solid #0a1428; font-size: 15px; font-family: monospace; }
 .log-time { color: #555; margin-right: 6px; }
 .log-error { color: #e74c3c; }
 .log-warn { color: #f39c12; }

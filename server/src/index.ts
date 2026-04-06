@@ -14,7 +14,7 @@ import {
   dbAddLearning, dbGetLearnings, dbIncrementTasksCompleted,
   dbGetAgentTickets, dbGetAgentCases, dbGetRecentTicketsWithAgent, dbGetRecentAnomalies,
   dbLogAgentActivity, dbGetAgentActivityLog,
-  dbLogAgentConversation, dbGetRecentAgentConversations,
+  dbLogAgentConversation, dbGetRecentAgentConversations, dbGetAgentConversations,
   dbDeleteCase, dbGetCaseConversation,
   dbGetUnanalyzedErrorLogs, dbMarkErrorLogsAsAnalyzed, dbGetErrorLogStats,
   type ErrorLog,
@@ -1348,6 +1348,21 @@ io.on('connection', (socket) => {
   }).catch(() => {
     socket.emit('agents:sync', { agents: [] });
   });
+
+  // Send all open cases from DB so the Cases tab is populated on load
+  dbGetCases().then(cases => {
+    for (const c of cases) {
+      socket.emit('case:opened', {
+        caso_id: c.caso_id,
+        bug_id: c.bug_id,
+        titulo: c.titulo,
+        prompt_ia: c.prompt_ia,
+        status: c.status,
+        created_by: c.created_by,
+        source_sector: c.source_sector || 'DEV',
+      });
+    }
+  }).catch(() => {});
 
   // --- Multi-agent registration ---
   socket.on('agent:register', (data: { id: string; name: string }) => {
