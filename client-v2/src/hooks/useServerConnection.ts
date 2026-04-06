@@ -212,6 +212,16 @@ export function useServerConnection(
       }
     });
 
+    // ── Sector center coordinates for walk_to ─────────────────────
+    const SECTOR_COORDS: Record<string, { col: number; row: number }> = {
+      MEETING_ROOM: { col: 31, row: 3 },
+      SUPORTE: { col: 11, row: 3 },
+      QA_ROOM: { col: 5, row: 14 },
+      DEV_ROOM: { col: 15, row: 14 },
+      LOG_ROOM: { col: 26, row: 14 },
+      CEO_ROOM: { col: 36, row: 14 },
+    };
+
     // ── Agent walk_to (pixel-agents visual) ──────────────────────
     socket.on('agent:walk_to', (data: { role?: string; agentName?: string; toSectorId: string; targetAgentName?: string; message?: string }) => {
       const os = getOfficeState();
@@ -239,9 +249,22 @@ export function useServerConnection(
             }
           }
         }
-      } else if (os.walkableTiles.length > 0) {
-        const target = os.walkableTiles[Math.floor(Math.random() * os.walkableTiles.length)];
-        os.walkToTile(ch.id, target.col, target.row);
+      } else {
+        // Walk to sector coordinates, with slight random offset so agents don't stack
+        const sector = SECTOR_COORDS[data.toSectorId];
+        if (sector) {
+          const offsetCol = Math.floor(Math.random() * 5) - 2; // -2 to +2
+          const offsetRow = Math.floor(Math.random() * 3) - 1; // -1 to +1
+          const targetCol = sector.col + offsetCol;
+          const targetRow = sector.row + offsetRow;
+          if (!os.walkToTile(ch.id, targetCol, targetRow)) {
+            // Fallback to exact sector center
+            os.walkToTile(ch.id, sector.col, sector.row);
+          }
+        } else if (os.walkableTiles.length > 0) {
+          const target = os.walkableTiles[Math.floor(Math.random() * os.walkableTiles.length)];
+          os.walkToTile(ch.id, target.col, target.row);
+        }
       }
 
       useOfficeStore.getState().addLogEntry(
