@@ -12,6 +12,8 @@ import {
   INACTIVE_SEAT_TIMER_RANGE_SEC,
   PALETTE_COUNT,
   WAITING_BUBBLE_DURATION_SEC,
+  WORK_DURATION_MIN_SEC,
+  WORK_DURATION_MAX_SEC,
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
@@ -567,6 +569,10 @@ export class OfficeState {
         ch.seatTimer = -1;
         ch.path = [];
         ch.moveProgress = 0;
+      } else {
+        // Becoming active — reset work timer and force return to seat
+        ch.workTimer = randomRange(WORK_DURATION_MIN_SEC, WORK_DURATION_MAX_SEC);
+        ch.wanderCount = ch.wanderLimit; // Force immediate return to seat
       }
       this.rebuildFurnitureInstances();
     }
@@ -644,6 +650,54 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (ch) {
       ch.currentTool = tool;
+    }
+  }
+
+  /** Assign a task to an agent and set delivery target */
+  assignTask(agentId: number, taskId: string, deliveryTargetId?: number): void {
+    const ch = this.characters.get(agentId);
+    if (ch) {
+      ch.currentTask = taskId;
+      ch.isActive = true;
+      if (deliveryTargetId !== undefined) {
+        ch.deliveryTarget = deliveryTargetId;
+      }
+      // If not already working, start working
+      if (ch.state === CharacterState.WAITING_TASK || ch.state === CharacterState.BREAK) {
+        ch.state = CharacterState.IDLE;
+        ch.workTimer = randomRange(WORK_DURATION_MIN_SEC, WORK_DURATION_MAX_SEC);
+      }
+    }
+  }
+
+  /** Mark task as complete and trigger delivery */
+  completeTask(agentId: number): void {
+    const ch = this.characters.get(agentId);
+    if (ch) {
+      ch.workTimer = 0; // Trigger completion in next update
+    }
+  }
+
+  /** Set agent on break */
+  setAgentOnBreak(agentId: number, breakType: 'coffee' | 'social' | 'rest', duration?: number): void {
+    const ch = this.characters.get(agentId);
+    if (ch) {
+      ch.state = CharacterState.BREAK;
+      ch.breakType = breakType;
+      ch.breakTimer = duration ?? randomRange(15, 45);
+      ch.isActive = false;
+    }
+  }
+
+  /** Make agent wait for a new task */
+  setAgentWaiting(agentId: number): void {
+    const ch = this.characters.get(agentId);
+    if (ch) {
+      ch.state = CharacterState.WAITING_TASK;
+      ch.waitingForTask = true;
+      ch.waitingTimer = 0;
+      ch.currentTask = null;
+      ch.deliveryTarget = null;
     }
   }
 
@@ -756,4 +810,9 @@ export class OfficeState {
     }
     return null;
   }
+}
+
+/** Random number in range [min, max) */
+function randomRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
 }

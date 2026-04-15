@@ -97,6 +97,7 @@ export interface WebSocketCallbacks {
   onCaseDeleted: (casoId: string) => void;
   /** Agent work status */
   onAgentWorking: (agentName: string, role: string, action: string) => void;
+  onAgentIdle: (agentName: string) => void;
   /** Bubble on an agent */
   onBubble: (evt: BubbleEvent) => void;
   /** Meeting */
@@ -233,6 +234,20 @@ export function useWebSocket(
         const ch = findCharByName(os, data.agentName);
         if (ch) {
           os.setAgentActive(ch.id, true);
+        }
+      }
+    });
+
+    // ── Agent idle/stopped working ───────────────────────────────
+    socket.on('agent:idle', (data: { agentName: string }) => {
+      callbacks.onLog(`${data.agentName} ficou ocioso`);
+
+      // Mark the character as inactive to trigger autonomous wandering
+      const os = getOfficeState();
+      if (os) {
+        const ch = findCharByName(os, data.agentName);
+        if (ch) {
+          os.setAgentActive(ch.id, false);
         }
       }
     });

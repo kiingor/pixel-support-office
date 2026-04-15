@@ -158,6 +158,18 @@ export function useServerConnection(
       }
     });
 
+    // ── Agent idle/stopped working ───────────────────────────────
+    socket.on('agent:idle', (data: { agentName: string }) => {
+      useOfficeStore.getState().setAgentWorkStatus(data.agentName, 'idle');
+      useOfficeStore.getState().addLogEntry(`${data.agentName} ficou ocioso`);
+
+      const os = getOfficeState();
+      if (os) {
+        const ch = findCharByName(os, data.agentName);
+        if (ch) os.setAgentActive(ch.id, false);
+      }
+    });
+
     // ── Agent conversations ──────────────────────────────────────
     socket.on('agent:conversation', (data: { from: string; fromRole: string; to: string; toRole: string; message: string }) => {
       useOfficeStore.getState().addAgentConversation(data);

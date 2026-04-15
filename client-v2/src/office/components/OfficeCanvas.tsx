@@ -12,6 +12,7 @@ import { unlockAudio } from '../../notificationSound.js';
 import { vscode } from '../../vscodeApi.js';
 import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js';
 import type { EditorState } from '../editor/editorState.js';
+import { updateAutonomousBehavior } from '../engine/autonomousBehavior.js';
 import { startGameLoop } from '../engine/gameLoop.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type {
@@ -119,6 +120,8 @@ export function OfficeCanvas({
     const stop = startGameLoop(canvas, {
       update: (dt) => {
         officeState.update(dt);
+        // Update autonomous agent behavior for natural work/break cycles
+        updateAutonomousBehavior(officeState, dt);
       },
       render: (ctx) => {
         // Canvas dimensions are in device pixels

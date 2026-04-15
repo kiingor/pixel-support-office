@@ -37,9 +37,12 @@ export interface FloorColor {
 }
 
 export const CharacterState = {
-  IDLE: 'idle',
-  WALK: 'walk',
-  TYPE: 'type',
+  IDLE: 'idle',           // Ocioso - parado, sem ação
+  WALK: 'walk',           // Caminhando - se movendo entre tiles
+  TYPE: 'type',           // Digitando - sentado trabalhando
+  DELIVER: 'deliver',     // Entregando tarefa - interagindo com outro agente
+  WAITING_TASK: 'waiting_task', // Aguardando tarefa - em pé, disponível
+  BREAK: 'break',         // Pausa - café, descanso, socializando
 } as const;
 export type CharacterState = (typeof CharacterState)[keyof typeof CharacterState];
 
@@ -178,6 +181,8 @@ export interface Character {
   bubbleTimer: number;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
+  /** Timer for active agents to take a break from typing (counts down to 0) */
+  workTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */
   isSubagent: boolean;
   /** Parent agent ID if this is a sub-agent, null otherwise */
@@ -192,4 +197,18 @@ export interface Character {
   inMeeting: boolean;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  
+  // New properties for enhanced state behavior
+  /** Current task being worked on */
+  currentTask: string | null;
+  /** Target agent ID for task delivery */
+  deliveryTarget: number | null;
+  /** Break type - what kind of break the agent is taking */
+  breakType: 'coffee' | 'social' | 'rest' | null;
+  /** Timer for break duration */
+  breakTimer: number;
+  /** Whether agent is waiting for a new task */
+  waitingForTask: boolean;
+  /** Timer for how long agent has been waiting */
+  waitingTimer: number;
 }
