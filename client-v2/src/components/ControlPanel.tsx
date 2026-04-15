@@ -67,40 +67,41 @@ export function ControlPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#16213e' }}>
-      {/* Header */}
-      <div style={{ padding: '10px 14px', background: '#0f3460', borderBottom: '2px solid #1a4a8a' }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#e94560', letterSpacing: 1 }}>
+      {/* Header - Compact */}
+      <div style={{ padding: '6px 10px', background: '#0f3460', borderBottom: '2px solid #1a4a8a' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#e94560', letterSpacing: 0.5 }}>
           PIXEL SUPPORT OFFICE
         </div>
-        <div style={{ fontSize: 15, color: '#5a7a9a', marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: '#5a7a9a', marginTop: 1 }}>
           {agents.length} agentes ativos
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs - Compact */}
       <div style={{ display: 'flex', background: '#0d1b3e', borderBottom: '1px solid #1a3a5c' }}>
         {TABS.map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             style={{
-              flex: 1, padding: '10px 0', border: 'none', cursor: 'pointer', fontSize: 16,
+              flex: 1, padding: '6px 2px', border: 'none', cursor: 'pointer', fontSize: 12,
               fontWeight: activeTab === tab ? 700 : 400,
               color: activeTab === tab ? '#e94560' : '#5a7a9a',
               background: activeTab === tab ? '#16213e' : 'transparent',
               borderBottom: activeTab === tab ? '2px solid #e94560' : '2px solid transparent',
               transition: 'all 0.15s',
             }}
+            title={tab}
           >
-            <span style={{ marginRight: 4 }}>{TAB_ICONS[tab]}</span>
+            <span style={{ marginRight: 2 }}>{TAB_ICONS[tab]}</span>
             {tab}
             {tab === 'Fila' && queueSize > 0 && (
-              <span style={{ marginLeft: 4, background: '#e74c3c', color: 'white', borderRadius: 8, padding: '0 5px', fontSize: 11 }}>
+              <span style={{ marginLeft: 2, background: '#e74c3c', color: 'white', borderRadius: 8, padding: '0 4px', fontSize: 9 }}>
                 {queueSize}
               </span>
             )}
             {tab === 'Casos' && cases.filter(c => c.status !== 'resolved').length > 0 && (
-              <span style={{ marginLeft: 4, background: '#e94560', color: 'white', borderRadius: 8, padding: '0 5px', fontSize: 11 }}>
+              <span style={{ marginLeft: 2, background: '#e94560', color: 'white', borderRadius: 8, padding: '0 4px', fontSize: 9 }}>
                 {cases.filter(c => c.status !== 'resolved').length}
               </span>
             )}
@@ -108,21 +109,22 @@ export function ControlPanel() {
         ))}
       </div>
 
-      {/* Tab Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '10px 12px' }}>
+      {/* Tab Content - Optimized spacing */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '6px 8px' }}>
 
         {/* === EQUIPE === */}
         {activeTab === 'Equipe' && (
           <div>
-            <div className="text-muted" style={{ marginBottom: 8 }}>Clique num agente para conversar</div>
+            <div className="text-muted" style={{ marginBottom: 6, fontSize: 11 }}>Clique num agente para conversar</div>
             {agents.map(agent => (
               <div
                 key={agent.id}
                 className={`panel-card ${selectedAgentId === agent.id ? 'active' : ''}`}
                 onClick={() => { if (renamingId !== agent.id) { selectAgent(agent.id); openChat(agent.id); } }}
+                style={{ padding: '6px 8px', marginBottom: 4 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div className="status-dot" style={{ background: ROLE_COLORS[agent.role], boxShadow: `0 0 6px ${ROLE_COLORS[agent.role]}66` }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div className="status-dot" style={{ width: 8, height: 8, background: ROLE_COLORS[agent.role], boxShadow: `0 0 6px ${ROLE_COLORS[agent.role]}66` }} />
                   <div style={{ flex: 1 }}>
                     {renamingId === agent.id ? (
                       <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
@@ -137,28 +139,28 @@ export function ControlPanel() {
                             if (e.key === 'Escape') setRenamingId(null);
                           }}
                           autoFocus
-                          style={{ background: '#0a1428', border: '1px solid #4488ff', borderRadius: 3, color: '#fff', padding: '2px 6px', fontSize: 12, width: '100%' }}
+                          style={{ background: '#0a1428', border: '1px solid #4488ff', borderRadius: 3, color: '#fff', padding: '2px 4px', fontSize: 11, width: '100%' }}
                         />
-                        <button className="btn btn-sm btn-primary" onClick={() => { if (renameValue.trim()) { renameAgent(agent.id, renameValue.trim()); setRenamingId(null); } }}>OK</button>
+                        <button className="btn btn-sm btn-primary" onClick={() => { if (renameValue.trim()) { renameAgent(agent.id, renameValue.trim()); setRenamingId(null); } }} style={{ padding: '2px 6px', fontSize: 11 }}>OK</button>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 17, fontWeight: 600, color: '#ffffff' }}>{agent.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>{agent.name}</span>
                         <span
                           onClick={e => { e.stopPropagation(); setRenamingId(agent.id); setRenameValue(agent.name); }}
-                          style={{ fontSize: 12, color: '#8899aa', cursor: 'pointer', padding: '0 3px' }}
+                          style={{ fontSize: 10, color: '#8899aa', cursor: 'pointer', padding: '0 2px' }}
                           title="Renomear"
                         >&#9998;</span>
                       </div>
                     )}
-                    <div style={{ fontSize: 15, color: '#5a7a9a' }}>
+                    <div style={{ fontSize: 11, color: '#5a7a9a', marginTop: 1 }}>
                       {ROLE_LABELS[agent.role]} - {agentWorkStatuses.get(agent.name)
                         ? <span style={{ color: '#2ecc71', fontWeight: 600 }}>{agentWorkStatuses.get(agent.name)}</span>
                         : <span style={{ color: '#666' }}>Ocioso</span>
                       }
                     </div>
                   </div>
-                  {renamingId !== agent.id && <span style={{ fontSize: 14, color: '#8899aa' }}>{'>'}</span>}
+                  {renamingId !== agent.id && <span style={{ fontSize: 11, color: '#8899aa' }}>{'>'}</span>}
                 </div>
               </div>
             ))}
@@ -168,21 +170,21 @@ export function ControlPanel() {
         {/* === FILA === */}
         {activeTab === 'Fila' && (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 18, fontWeight: 700, color: '#e0e0e0' }}>Fila de Atendimento</span>
-              {queueSize > 0 && <span className="badge badge-open">{queueSize} aguardando</span>}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>Fila de Atendimento</span>
+              {queueSize > 0 && <span className="badge badge-open" style={{ fontSize: 10, padding: '1px 6px' }}>{queueSize} aguardando</span>}
             </div>
-            {tickets.length === 0 && <div className="text-muted">Nenhum ticket na fila</div>}
+            {tickets.length === 0 && <div className="text-muted" style={{ fontSize: 11 }}>Nenhum ticket na fila</div>}
             {tickets.map(t => {
               const statusClass = t.status === 'done' ? 'badge-done' : t.status === 'processing' ? 'badge-processing' : 'badge-pending';
               return (
-                <div key={t.id} className="panel-card" style={{ cursor: 'default' }}>
+                <div key={t.id} className="panel-card" style={{ cursor: 'default', padding: '6px 8px', marginBottom: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 16, color: '#e0e0e0' }}>{t.discordAuthor || 'Demo User'}</span>
-                    <span className={`badge ${statusClass}`}>{t.status}</span>
+                    <span style={{ fontWeight: 600, fontSize: 12, color: '#e0e0e0' }}>{t.discordAuthor || 'Demo User'}</span>
+                    <span className={`badge ${statusClass}`} style={{ fontSize: 9, padding: '1px 5px' }}>{t.status}</span>
                   </div>
-                  <div style={{ color: '#6a8aaa', marginTop: 3, fontSize: 15 }}>
-                    {t.discordMessage?.slice(0, 80) || 'Ticket simulado'}
+                  <div style={{ color: '#6a8aaa', marginTop: 2, fontSize: 11 }}>
+                    {t.discordMessage?.slice(0, 60) || 'Ticket simulado'}
                   </div>
                 </div>
               );
@@ -193,29 +195,32 @@ export function ControlPanel() {
         {/* === CASOS === */}
         {activeTab === 'Casos' && (
           <div>
-            {/* Filters */}
-            <div style={{ marginBottom: 8 }}>
+            {/* Filters - Compact */}
+            <div style={{ marginBottom: 6 }}>
               <input
                 type="text"
-                placeholder="Buscar caso, bug ou titulo..."
+                placeholder="Buscar caso..."
                 value={caseSearch}
                 onChange={e => setCaseSearch(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', background: '#0a1428', border: '1px solid #1a3a5c', borderRadius: 4, color: '#fff', fontSize: 16, marginBottom: 6 }}
+                style={{ width: '100%', padding: '5px 8px', background: '#0a1428', border: '1px solid #1a3a5c', borderRadius: 4, color: '#fff', fontSize: 11, marginBottom: 4 }}
               />
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 3 }}>
                 {(['all', 'open', 'resolved'] as const).map(f => (
                   <button
                     key={f}
                     onClick={() => setCaseFilter(f)}
                     className={`btn btn-sm ${caseFilter === f ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ flex: 1, fontSize: 12 }}
+                    style={{ flex: 1, fontSize: 9, padding: '3px 2px' }}
                   >
-                    {f === 'all' ? `Todos (${cases.length})` : f === 'open' ? `Abertos (${cases.filter(c => c.status !== 'resolved').length})` : `Resolvidos (${cases.filter(c => c.status === 'resolved').length})`}
+                    {f === 'all' ? `Todos` : f === 'open' ? `Abertos` : `Resolvidos`}
+                    <span style={{ marginLeft: 2, fontSize: 8 }}>
+                      ({f === 'all' ? cases.length : f === 'open' ? cases.filter(c => c.status !== 'resolved').length : cases.filter(c => c.status === 'resolved').length})
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
-            {cases.length === 0 && <div className="text-muted">Nenhum caso aberto</div>}
+            {cases.length === 0 && <div className="text-muted" style={{ fontSize: 11 }}>Nenhum caso aberto</div>}
             {[...cases]
             .filter(c => {
               if (caseFilter === 'open' && c.status === 'resolved') return false;
@@ -236,30 +241,29 @@ export function ControlPanel() {
                 <div
                   key={c.id}
                   className="panel-card"
-                  style={{ borderLeft: `3px solid ${isOpen ? '#e74c3c' : '#2ecc71'}` }}
+                  style={{ borderLeft: `3px solid ${isOpen ? '#e74c3c' : '#2ecc71'}`, padding: '6px 8px', marginBottom: 4 }}
                   onClick={() => openCaseDetail(c.casoId)}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: isOpen ? '#e94560' : '#2ecc71' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: 11, color: isOpen ? '#e94560' : '#2ecc71' }}>
                         {c.casoId}
                       </span>
-                      {c.bugId && <span className="badge badge-bug">{c.bugId}</span>}
+                      {c.bugId && <span className="badge badge-bug" style={{ fontSize: 8, padding: '1px 4px' }}>{c.bugId}</span>}
                     </div>
-                    <span className={`badge ${isOpen ? 'badge-open' : 'badge-resolved'}`}>
+                    <span className={`badge ${isOpen ? 'badge-open' : 'badge-resolved'}`} style={{ fontSize: 9, padding: '1px 5px' }}>
                       {isOpen ? 'Aberto' : 'Resolvido'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 15, color: '#8aa', marginBottom: 4 }}>{c.titulo}</div>
+                  <div style={{ fontSize: 11, color: '#8aa', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.titulo}</div>
                   {c.createdBy && (
-                    <div style={{ fontSize: 14, color: '#5a7a9a', marginBottom: 4 }}>
-                      Criado por: <span style={{ color: '#ff8844', fontWeight: 600 }}>{c.createdBy}</span>
-                      {c.sourceSector && <span> ({c.sourceSector})</span>}
+                    <div style={{ fontSize: 10, color: '#5a7a9a', marginBottom: 2 }}>
+                      Por: <span style={{ color: '#ff8844', fontWeight: 600 }}>{c.createdBy}</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+                  <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
                     {isOpen && (
-                      <button className="btn btn-sm btn-success" onClick={() => resolveCase(c.casoId)}>
+                      <button className="btn btn-sm btn-success" onClick={() => resolveCase(c.casoId)} style={{ fontSize: 9, padding: '2px 6px' }}>
                         Resolver
                       </button>
                     )}
@@ -274,11 +278,9 @@ export function ControlPanel() {
                           setTimeout(() => setConfirmDeleteId(null), 3000);
                         }
                       }}
+                      style={{ fontSize: 9, padding: '2px 6px' }}
                     >
                       {confirmDeleteId === c.casoId ? 'Confirmar?' : 'Deletar'}
-                    </button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => openCaseDetail(c.casoId)}>
-                      Detalhes
                     </button>
                   </div>
                 </div>
@@ -290,9 +292,9 @@ export function ControlPanel() {
         {/* === CHAT (Agent Conversations) === */}
         {activeTab === 'Chat' && (
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#e0e0e0' }}>Conversas entre Agentes</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#e0e0e0' }}>Conversas entre Agentes</div>
             {agentConversations.length === 0 && (
-              <div className="text-muted">Nenhuma conversa registrada ainda</div>
+              <div className="text-muted" style={{ fontSize: 11 }}>Nenhuma conversa registrada ainda</div>
             )}
             {(() => {
               // Group conversations by agent pair
@@ -309,26 +311,26 @@ export function ControlPanel() {
                   <div
                     key={pair}
                     className="panel-card"
-                    style={{ cursor: 'pointer', borderLeft: '3px solid #f39c12' }}
+                    style={{ cursor: 'pointer', borderLeft: '3px solid #f39c12', padding: '6px 8px', marginBottom: 4 }}
                     onClick={() => openConversationModal(pair)}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ fontSize: 15 }}>
+                      <span style={{ fontSize: 11 }}>
                         <span style={{ fontWeight: 700, color: '#4488ff' }}>{last.from}</span>
                         <span style={{ color: '#9aaa' }}> ↔ </span>
                         <span style={{ fontWeight: 700, color: '#2ecc71' }}>{last.to}</span>
                       </span>
-                      <span style={{ fontSize: 13, color: '#7a8a9a' }}>{convs.length} msgs</span>
+                      <span style={{ fontSize: 10, color: '#7a8a9a' }}>{convs.length} msgs</span>
                     </div>
-                    <div style={{ fontSize: 14, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {last.message.slice(0, 80)}
+                    <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {last.message.slice(0, 60)}
                     </div>
                   </div>
                 );
               });
             })()}
 
-            {/* Conversation detail modal */}
+            {/* Conversation detail modal - Compact */}
             {conversationModalOpen && conversationModalKey && (() => {
               const pair = conversationModalKey;
               const convs = agentConversations.filter(c => {
@@ -337,32 +339,32 @@ export function ControlPanel() {
               });
               return (
                 <div className="modal-overlay" onClick={closeConversationModal}>
-                  <div className="modal-content" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
-                    <div className="modal-header">
-                      <span style={{ fontSize: 18, fontWeight: 700, color: '#e0e0e0' }}>
+                  <div className="modal-content" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+                    <div className="modal-header" style={{ padding: '8px 12px' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#e0e0e0' }}>
                         {pair.replace('↔', ' ↔ ')}
                       </span>
-                      <button className="btn-icon" onClick={closeConversationModal} style={{ fontSize: 22 }}>X</button>
+                      <button className="btn-icon" onClick={closeConversationModal} style={{ fontSize: 16 }}>X</button>
                     </div>
-                    <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', maxHeight: '60vh' }}>
+                    <div style={{ flex: 1, overflow: 'auto', padding: '8px 10px', maxHeight: '50vh' }}>
                       {convs.map((conv, i) => (
                         <div
                           key={i}
                           style={{
-                            marginBottom: 10,
-                            padding: '10px 12px',
-                            borderRadius: 8,
+                            marginBottom: 6,
+                            padding: '6px 8px',
+                            borderRadius: 6,
                             background: conv.from === pair.split('↔')[0] ? '#1a2a4e' : '#1a3a2e',
                             borderLeft: `3px solid ${conv.from === pair.split('↔')[0] ? '#4488ff' : '#2ecc71'}`,
                           }}
                         >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <span style={{ fontWeight: 700, fontSize: 15, color: conv.from === pair.split('↔')[0] ? '#4488ff' : '#2ecc71' }}>
-                              {conv.from} <span style={{ fontWeight: 400, color: '#7a8a9a' }}>({conv.fromRole})</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <span style={{ fontWeight: 700, fontSize: 11, color: conv.from === pair.split('↔')[0] ? '#4488ff' : '#2ecc71' }}>
+                              {conv.from} <span style={{ fontWeight: 400, color: '#7a8a9a', fontSize: 10 }}>({conv.fromRole})</span>
                             </span>
-                            <span style={{ fontSize: 13, color: '#666' }}>{conv.time}</span>
+                            <span style={{ fontSize: 10, color: '#666' }}>{conv.time}</span>
                           </div>
-                          <div style={{ fontSize: 15, color: '#ccc', lineHeight: 1.5 }}>{conv.message}</div>
+                          <div style={{ fontSize: 11, color: '#ccc', lineHeight: 1.4 }}>{conv.message}</div>
                         </div>
                       ))}
                     </div>
@@ -376,15 +378,15 @@ export function ControlPanel() {
         {/* === LOGS === */}
         {activeTab === 'Logs' && (
           <div>
-            {logEntries.length === 0 && <div className="text-muted">Aguardando eventos...</div>}
+            {logEntries.length === 0 && <div className="text-muted" style={{ fontSize: 11 }}>Aguardando eventos...</div>}
             {logEntries.slice(-50).reverse().map((entry, i) => {
               const isError = entry.message.toLowerCase().includes('error') || entry.message.toLowerCase().includes('erro');
               const isWarn = entry.message.toLowerCase().includes('warn') || entry.message.toLowerCase().includes('fila');
               const logClass = isError ? 'log-error' : isWarn ? 'log-warn' : 'log-info';
               return (
-                <div key={i} className="log-entry">
-                  <span className="log-time">{entry.time}</span>
-                  <span className={logClass}>{entry.message}</span>
+                <div key={i} className="log-entry" style={{ fontSize: 10, marginBottom: 2, padding: '3px 4px' }}>
+                  <span className="log-time" style={{ fontSize: 9 }}>{entry.time}</span>
+                  <span className={logClass} style={{ fontSize: 10 }}>{entry.message}</span>
                 </div>
               );
             })}
